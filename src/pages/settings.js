@@ -65,7 +65,7 @@ function buildLanguagePanel(onLanguageChanged) {
   const current = getLang();
   const seg = el("div", { class: "segmented" }, [
     segButton("en", "English", current),
-    segButton("fa", "فارسی", current, "fa"),
+    segButton("zh-CN", "简体中文", current),
   ]);
   seg.addEventListener("click", async (e) => {
     const btn = e.target.closest(".seg");

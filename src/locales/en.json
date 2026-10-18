@@ -113,13 +113,18 @@
     "cancel": "Cancel",
     "englishTab": "EN",
     "persianTab": "FA",
-    "placeholder": "Paste lyrics here. Optional: start a line with [1:23] to sync it to that timestamp.",
-    "saved": "Lyrics saved"
+    "placeholder": "Paste plain lyrics or LRC, e.g. [00:12.500] or <00:12.500>word.",
+    "saved": "Lyrics saved",
+    "importLrc": "Import LRC file",
+    "importError": "Could not save the lyrics. Please try again.",
+    "loadError": "Could not load lyrics. Close and reopen this view."
   },
   "import": {
     "button": "Import songs",
     "chooseFiles": "Choose files",
-    "dragHint": "or drop audio files anywhere",
+    "dragHint": "Drop audio and matching LRC files together to import lyrics automatically",
+    "addedWithLyrics": "Added {{count}} songs with {{lyrics}} matching lyrics files",
+    "lyricsWarning": "Songs added, but {{count}} lyrics files could not be matched uniquely or read. Add them from Lyrics.",
     "processing": "Reading metadata…",
     "addedOne": "Added \"{{title}}\"",
     "addedMany": "Added {{count}} songs",

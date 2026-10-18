@@ -164,6 +164,15 @@ plain strings, or objects with a `time` (seconds) for sync highlighting.
 
 ---
 
+### Optional raw LRC preservation
+
+Lyrics JSON may additionally contain `rawLrc: { "en": "...", "fa": "..." }`.
+Each value is the original lyrics text, including enhanced word timing,
+offsets and fractional timestamps. New Lumen imports prefer a string in
+rawLrc over the corresponding languages array. The languages arrays remain
+available for older readers and contain parsed line timing with the LRC
+offset applied. Raw text must not have that offset applied a second time.
+
 ## 7. `playlists/<name>.json`
 
 Any number of files. Playlists **only store song ids** — all display

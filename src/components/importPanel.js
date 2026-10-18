@@ -9,7 +9,7 @@
 
 import { $, el } from "../utils/dom.js";
 import { importFiles, isAudioFile } from "../services/importService.js";
-import { t } from "../services/i18nService.js";
+import { t, getLang } from "../services/i18nService.js";
 import { isIOS } from "../utils/platform.js";
 
 export function initImportPanel({ onImported }) {
@@ -46,8 +46,14 @@ export function initImportPanel({ onImported }) {
     }
 
     showToast(t("import.processing"), true);
-    const imported = await importFiles(audioFiles, (i, total) => {
+    let lyricsCount = 0;
+    let lyricsWarnings = 0;
+    const imported = await importFiles(allFiles, (i, total) => {
       showToast(`${t("import.processing")} (${i}/${total})`, true);
+    }, {
+      lyricsLanguage: getLang(),
+      onLyricsImported: () => lyricsCount++,
+      onLyricsWarning: () => lyricsWarnings++,
     });
     toast.classList.remove("visible");
 
@@ -57,6 +63,10 @@ export function initImportPanel({ onImported }) {
     }
     if (imported.length < audioFiles.length) {
       showToast(t("import.partialAdded", { added: imported.length, total: audioFiles.length }), false, "error");
+    } else if (lyricsWarnings) {
+      showToast(t("import.lyricsWarning", { count: lyricsWarnings }), false, "error");
+    } else if (lyricsCount) {
+      showToast(t("import.addedWithLyrics", { count: imported.length, lyrics: lyricsCount }));
     } else if (imported.length === 1) {
       showToast(t("import.addedOne", { title: imported[0].title }));
     } else {

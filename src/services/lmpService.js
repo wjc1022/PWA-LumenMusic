@@ -1,3 +1,4 @@
+import { parseLrc } from "../lyrics/lrc.mjs";
 /**
  * services/lmpService.js
  * ---------------------------------------------------------------
@@ -77,12 +78,7 @@ function bytesToDataUrl(bytes, mime) {
 
 /** Converts our internal lyrics text ("[m:ss] line\n...") to the spec's line-array form. */
 function lyricsTextToLines(text) {
-  if (!text) return [];
-  return text.split("\n").map((line) => {
-    const m = line.match(/^\[(\d+):(\d{2})\]\s*(.*)$/);
-    if (m) return { time: Number(m[1]) * 60 + Number(m[2]), text: m[3] };
-    return { time: null, text: line };
-  });
+  return parseLrc(text).lines.map(({time, text}) => ({time, text}));
 }
 
 /** Converts the spec's lyric line array (strings or {time,text} objects) back to our text format. */
@@ -94,8 +90,9 @@ function lyricsLinesToText(lines) {
       const t = typeof line.time === "number" ? line.time : (typeof line.startTime === "number" ? line.startTime : null);
       const text = line.text ?? "";
       if (t !== null && isFinite(t)) {
-        const mins = Math.floor(t / 60);
-        const secs = String(Math.floor(t % 60)).padStart(2, "0");
+        const milliseconds = Math.max(0, Math.round(t * 1000));
+        const mins = Math.floor(milliseconds / 60000);
+        const secs = ((milliseconds % 60000) / 1000).toFixed(3).padStart(6, "0");
         return `[${mins}:${secs}] ${text}`;
       }
       return text;
@@ -286,8 +283,8 @@ export async function importPackage(file, onProgress) {
         const lyricsJson = JSON.parse(new TextDecoder().decode(entries.get(metadata.lyrics)));
         const languages = lyricsJson.languages || {};
         await Lyrics.save(finalId, {
-          en: lyricsLinesToText(languages.en || []),
-          fa: lyricsLinesToText(languages.fa || []),
+          en: typeof lyricsJson.rawLrc?.en === "string" ? lyricsJson.rawLrc.en : lyricsLinesToText(languages.en || []),
+          fa: typeof lyricsJson.rawLrc?.fa === "string" ? lyricsJson.rawLrc.fa : lyricsLinesToText(languages.fa || []),
         });
       } catch {
         validated.warnings.push(`"${metadata.title}": lyrics file was invalid JSON and was skipped.`);
@@ -484,6 +481,7 @@ export async function exportPackage(options = {}, onProgress) {
         lyricsPath = `lyrics/${song.id}.json`;
         const lyricsJson = {
           id: song.id,
+          rawLrc: { en: lyricsRecord.en || "", fa: lyricsRecord.fa || "" },
           languages: {
             en: lyricsTextToLines(lyricsRecord.en || ""),
             fa: lyricsTextToLines(lyricsRecord.fa || ""),

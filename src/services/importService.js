@@ -7,7 +7,7 @@
  * ---------------------------------------------------------------
  */
 
-import { Songs } from "../database/db.js";
+import { Songs, Lyrics } from "../database/db.js";
 import { extractMetadata, blobToDataUrl } from "./metadataService.js";
 import { generatePlaceholderCover } from "./coverService.js";
 import { generateId } from "../utils/id.js";
@@ -15,7 +15,14 @@ import { generateId } from "../utils/id.js";
 const ACCEPTED_TYPE_PREFIX = "audio";
 
 export function isAudioFile(file) {
-  return file.type.startsWith(ACCEPTED_TYPE_PREFIX) || /\.(mp3|m4a|wav|ogg|flac|aac|aif|aiff|caf)$/i.test(file.name);
+  return !/\.lrc$/i.test(file.name) && (file.type.startsWith(ACCEPTED_TYPE_PREFIX) || /\.(mp3|m4a|wav|ogg|flac|aac|aif|aiff|caf)$/i.test(file.name));
+}
+
+// Include the relative folder when supplied, so duplicate names in separate
+// directories cannot accidentally acquire each other's lyrics.
+function pairingKey(file) {
+  return (file.webkitRelativePath || file.name).replace(/\\/g, "/")
+    .replace(/\.[^/.]+$/, "").normalize("NFC").toLowerCase();
 }
 
 /**
@@ -45,15 +52,22 @@ export async function attachInstrumental(song, file) {
   return updated;
 }
 
-function withTimeout(promise, ms, fallback) {
-  return Promise.race([
+async function withTimeout(promise, ms, fallback) {
+  let timer;
+  try { return await Promise.race([
     promise,
-    new Promise((resolve) => setTimeout(() => resolve(fallback), ms)),
-  ]);
+    new Promise((resolve) => { timer = setTimeout(() => resolve(fallback), ms); }),
+  ]); } finally { clearTimeout(timer); }
 }
 
-export async function importFiles(fileList, onProgress) {
-  const files = Array.from(fileList).filter(isAudioFile);
+export async function importFiles(fileList, onProgress, options = {}) {
+  const selected = Array.from(fileList);
+  const files = selected.filter(isAudioFile);
+  const lyricsFiles = new Map();
+  for (const file of selected.filter(file => /\.lrc$/i.test(file.name))) {
+    const key = pairingKey(file);
+    lyricsFiles.set(key, [...(lyricsFiles.get(key) || []), file]);
+  }
   const imported = [];
 
   for (let i = 0; i < files.length; i++) {
@@ -95,6 +109,22 @@ export async function importFiles(fileList, onProgress) {
 
       await Songs.add(song);
       imported.push(song);
+      const matches = lyricsFiles.get(pairingKey(file)) || [];
+      if (matches.length > 1) {
+        options.onLyricsWarning?.(file.name);
+      } else if (matches.length === 1) {
+        try {
+          const text = await withTimeout(matches[0].text(), 10000, null);
+          if (text === null) throw new Error("LRC read timed out");
+          const lang = options.lyricsLanguage === "fa" ? "fa" : "en";
+          await Lyrics.save(song.id, { en: "", fa: "", [lang]: text });
+          options.onLyricsImported?.(song);
+        } catch (error) {
+          // A failed sidecar must not discard an otherwise playable song.
+          console.warn(`Could not import lyrics for "${file.name}"`, error);
+          options.onLyricsWarning?.(file.name);
+        }
+      }
     } catch (err) {
       // One unreadable file (e.g. a DRM-protected or corrupt track)
       // shouldn't abort the rest of the batch — skip it and continue.

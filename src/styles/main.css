@@ -681,3 +681,12 @@ main{ padding:6px 16px calc(var(--mini-h) + 34px); min-height:100vh; }
   .lyrics-modal.open .lyrics-sheet{ transform:translate(-50%,0); }
   .side-menu{ max-width:280px; }
 }
+
+/* Enhanced LRC preserves whitespace and highlights timed words. */
+.lyric-line{ flex-shrink:0; white-space:pre-wrap; }
+.lyric-line.current .lyric-word{ color:rgba(243,241,234,0.55); text-shadow:none; }
+.lyric-line.current .lyric-word.sung{ color:var(--yellow); }
+.lyric-line.current .lyric-word.active{ text-shadow:0 0 18px rgba(255,209,70,0.65); }
+.lyrics-import{ flex-shrink:0; display:flex; justify-content:center; margin-top:12px; }
+.lyrics-body > .btn, .lyrics-body > .lyrics-editor-actions{ flex-shrink:0; }
+@media (prefers-reduced-motion: reduce){ .lyrics-body{ scroll-behavior:auto; } }

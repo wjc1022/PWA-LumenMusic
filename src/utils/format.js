@@ -28,7 +28,7 @@ export function localizeNumber(value, lang) {
 
 export function humanDate(timestamp, lang) {
   const d = new Date(timestamp);
-  const str = d.toLocaleDateString(lang === "fa" ? "fa-IR" : "en-US", {
+  const str = d.toLocaleDateString(lang === "fa" ? "fa-IR" : lang === "zh-CN" ? "zh-CN" : "en-US", {
     month: "short", day: "numeric",
   });
   return str;
