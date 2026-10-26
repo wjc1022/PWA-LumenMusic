@@ -6,7 +6,7 @@
    so there is no user media to precache here.
    ========================================================= */
 
-const CACHE_NAME = "lumen-shell-v10";
+const CACHE_NAME = "lumen-shell-v13";
 
 const APP_SHELL = [
   "./",
@@ -21,6 +21,8 @@ const APP_SHELL = [
   "./src/services/coverService.js",
   "./src/services/i18nService.js",
   "./src/services/importService.js",
+  "./src/services/lyricFile.js",
+  "./src/components/songResources.js",
   "./src/services/lmpService.js",
   "./src/services/metadataService.js",
   "./src/services/phoneMusicService.js",
@@ -40,7 +42,7 @@ const APP_SHELL = [
   "./src/components/emptyState.js",
   "./src/components/importPanel.js",
   "./src/components/lmpDialog.js",
-  "./src/components/lyricsModal.js",
+  "./src/components/playerLyrics.js",
   "./src/components/miniPlayer.js",
   "./src/components/playerSheet.js",
   "./src/components/sideMenu.js",

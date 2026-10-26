@@ -2,9 +2,9 @@
  * components/playerSheet.js
  * ---------------------------------------------------------------
  * The bottom sheet opened by tapping the mini player. This is the
- * central playback controller: large art, full transport controls,
- * shuffle/repeat, favorite, seek with time labels, playback speed,
- * vocal/instrumental switching, and buttons into Lyrics and Queue.
+ * central playback controller: synchronized lyrics, full transport controls,
+ * shuffle/repeat, favorite, seek with time labels,
+ * vocal/instrumental switching, and queue.
  * ---------------------------------------------------------------
  */
 
@@ -12,21 +12,21 @@ import { $, el, clearNode } from "../utils/dom.js";
 import { localizeTime } from "../utils/format.js";
 import { t, getLang } from "../services/i18nService.js";
 import { createSongRow } from "./songRow.js";
-import { attachInstrumental } from "../services/importService.js";
+import { initPlayerLyrics } from "./playerLyrics.js";
 import {
   audioEl, on, togglePlay, playNext, playPrev, toggleFavorite, seekTo,
   setShuffle, isShuffleOn, getCurrentSong, getRepeatMode, cycleRepeatMode,
-  getPlaybackRate, setPlaybackRate, switchVariant, getCurrentVariant,
-  hasInstrumental, getQueue, playSong, refreshCurrentSong,
+  switchVariant, getCurrentVariant, getVariantStatus,
+  hasInstrumental, getQueue, playSong,
 } from "../services/audioEngine.js";
 
-const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 
-export function initPlayerSheet({ onOpenLyrics }) {
+
+export function initPlayerSheet() {
+  const lyrics = initPlayerLyrics();
   const modal = $("#playerSheetModal");
   const backdrop = $("#playerSheetBackdrop");
   const closeBtn = $("#playerSheetClose");
-  const cover = $("#sheetCover");
   const titleEl = $("#sheetTitle");
   const artistEl = $("#sheetArtist");
 
@@ -44,12 +44,18 @@ export function initPlayerSheet({ onOpenLyrics }) {
   const repeatOneBadge = $("#repeatOneBadge");
 
   const favBtn = $("#sheetFavBtn");
-  const speedBtn = $("#sheetSpeedBtn");
   const variantBtn = $("#sheetVariantBtn");
-  const lyricsBtn = $("#sheetLyricsBtn");
   const queueBtn = $("#sheetQueueBtn");
-  const speedPanel = $("#sheetSpeedPanel");
   const queuePanel = $("#sheetQueuePanel");
+  const errorToast = el("div", { class: "toast toast-error", role: "alert" });
+  document.body.appendChild(errorToast);
+  let errorTimer;
+  on("playbackerror", key => {
+    clearTimeout(errorTimer);
+    errorToast.textContent = t(key);
+    errorToast.classList.add("visible");
+    errorTimer = setTimeout(() => errorToast.classList.remove("visible"), 6000);
+  });
 
   let isDragging = false;
 
@@ -60,15 +66,16 @@ export function initPlayerSheet({ onOpenLyrics }) {
     renderSong(getCurrentSong());
     renderRepeatUI();
     renderShuffleUI();
-    renderSpeedUI();
     renderVariantUI();
+    lyrics.open(getCurrentSong());
+    updateProgressUI(audioEl.currentTime, audioEl.duration);
     closeBtn.focus();
   }
 
   function close() {
+    lyrics.close();
     modal.classList.remove("open");
     modal.setAttribute("aria-hidden", "true");
-    speedPanel.hidden = true;
     queuePanel.hidden = true;
   }
 
@@ -76,7 +83,6 @@ export function initPlayerSheet({ onOpenLyrics }) {
     if (!song) return;
     titleEl.textContent = song.title;
     artistEl.textContent = song.artist;
-    cover.src = song.cover || "src/assets/icons/icon-192.png";
     favBtn.classList.toggle("active", !!song.favorite);
     favBtn.setAttribute("aria-pressed", String(!!song.favorite));
     favBtn.textContent = song.favorite ? "♥" : "♡";
@@ -86,7 +92,8 @@ export function initPlayerSheet({ onOpenLyrics }) {
 
   function updateProgressUI(currentTime, duration) {
     const lang = getLang();
-    if (duration) progressFill.style.width = `${(currentTime / duration) * 100}%`;
+    progressFill.style.width = `${duration ? (currentTime / duration) * 100 : 0}%`;
+    progressTrack.setAttribute("aria-valuenow", String(duration ? Math.round(currentTime / duration * 100) : 0));
     currentTimeEl.textContent = localizeTime(currentTime, lang);
     remainingTimeEl.textContent = duration ? `-${localizeTime(duration - currentTime, lang)}` : "-0:00";
   }
@@ -105,16 +112,18 @@ export function initPlayerSheet({ onOpenLyrics }) {
     repeatOneBadge.hidden = mode !== "one";
   }
 
-  function renderSpeedUI() {
-    speedBtn.textContent = `${getPlaybackRate()}x`;
-  }
-
   function renderVariantUI() {
     const song = getCurrentSong();
     const available = hasInstrumental(song);
     const variant = getCurrentVariant();
+    const { pending } = getVariantStatus();
     variantBtn.textContent = variant === "instrumental" ? t("player.instrumental") : t("player.vocals");
+    if (pending) variantBtn.textContent = t("player.variantSwitching");
+    variantBtn.setAttribute("aria-busy", String(pending));
     variantBtn.classList.toggle("disabled-hint", !available);
+    variantBtn.disabled = !available;
+    if (!available) variantBtn.textContent = t("player.noInstrumental");
+    variantBtn.setAttribute("aria-label", variantBtn.textContent);
   }
 
   // ---- open/close ----
@@ -135,8 +144,10 @@ export function initPlayerSheet({ onOpenLyrics }) {
   favBtn.addEventListener("click", () => { const s = getCurrentSong(); if (s) toggleFavorite(s); });
 
   on("trackchange", (song) => {
+    clearTimeout(errorTimer);
+    errorToast.classList.remove("visible");
     renderSong(song);
-    updateProgressUI(0, song?.duration || 0);
+    updateProgressUI(audioEl.currentTime, audioEl.duration || song?.duration || 0);
     if (!queuePanel.hidden) renderQueuePanel();
   });
   on("playstate", (isPlaying) => {
@@ -149,6 +160,13 @@ export function initPlayerSheet({ onOpenLyrics }) {
   on("favorite", (song) => { if (getCurrentSong()?.id === song.id) renderSong(song); });
   on("variantchange", renderVariantUI);
 
+  progressTrack.addEventListener("keydown", event => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) || !audioEl.duration) return;
+    event.preventDefault();
+    const time = event.key === "Home" ? 0 : event.key === "End" ? audioEl.duration : audioEl.currentTime + (event.key === "ArrowRight" ? 5 : -5);
+    seekTo(Math.max(0, Math.min(1, time / audioEl.duration)));
+    updateProgressUI(audioEl.currentTime, audioEl.duration);
+  });
   // ---- seek (pointer drag, same pattern as the mini player) ----
   function ratioFromEvent(e) {
     const rect = progressTrack.getBoundingClientRect();
@@ -178,86 +196,14 @@ export function initPlayerSheet({ onOpenLyrics }) {
   progressTrack.addEventListener("pointerup", endDrag);
   progressTrack.addEventListener("pointercancel", endDrag);
 
-  // ---- playback speed panel ----
-  speedBtn.addEventListener("click", () => {
-    queuePanel.hidden = true;
-    speedPanel.hidden = !speedPanel.hidden;
-    if (!speedPanel.hidden) renderSpeedPanel();
-  });
-  function renderSpeedPanel() {
-    clearNode(speedPanel);
-    const list = el("div", { class: "sheet-speed-list" });
-    SPEEDS.forEach((speed) => {
-      const btn = el("button", {
-        class: `sheet-speed-item${speed === getPlaybackRate() ? " active" : ""}`,
-      }, `${speed}x`);
-      btn.addEventListener("click", async () => {
-        await setPlaybackRate(speed);
-        renderSpeedUI();
-        renderSpeedPanel();
-      });
-      list.appendChild(btn);
-    });
-    speedPanel.appendChild(list);
-  }
-
-  // ---- vocal / instrumental ----
   variantBtn.addEventListener("click", async () => {
-    const song = getCurrentSong();
-    if (!hasInstrumental(song)) {
-      variantBtn.classList.add("shake");
-      setTimeout(() => variantBtn.classList.remove("shake"), 400);
-      showNoInstrumentalHint();
-      return;
-    }
-    const nextVariant = getCurrentVariant() === "vocals" ? "instrumental" : "vocals";
-    await switchVariant(nextVariant);
+    if (!hasInstrumental()) return;
+    await switchVariant(getVariantStatus().target === "vocals" ? "instrumental" : "vocals");
     renderVariantUI();
   });
-  function showNoInstrumentalHint() {
-    clearNode(speedPanel);
-    speedPanel.hidden = false;
-    queuePanel.hidden = true;
-    speedPanel.append(
-      el("p", { class: "sheet-hint" }, t("player.noInstrumental")),
-      buildAddInstrumentalButton()
-    );
-  }
-
-  function buildAddInstrumentalButton() {
-    const wrap = el("div", { class: "sheet-add-instrumental" });
-    const btn = el("button", { class: "btn ghost" }, t("player.addInstrumental"));
-    const fileInput = $("#instrumentalFileInput");
-    btn.addEventListener("click", () => {
-      fileInput.value = "";
-      fileInput.click();
-    });
-    const handleChange = async () => {
-      const file = fileInput.files[0];
-      if (!file) return;
-      const song = getCurrentSong();
-      if (!song) return;
-      const updated = await attachInstrumental(song, file);
-      refreshCurrentSong(updated);
-      renderVariantUI();
-      speedPanel.hidden = true;
-    };
-    fileInput.onchange = handleChange;
-    wrap.appendChild(btn);
-    return wrap;
-  }
-
-  // ---- lyrics ----
-  lyricsBtn.addEventListener("click", () => {
-    const song = getCurrentSong();
-    if (!song) return;
-    close(); // avoid stacking two full-screen sheets at once
-    onOpenLyrics?.(song);
-  });
-
+  on("songselected", open);
   // ---- queue ----
   queueBtn.addEventListener("click", () => {
-    speedPanel.hidden = true;
     queuePanel.hidden = !queuePanel.hidden;
     if (!queuePanel.hidden) renderQueuePanel();
   });

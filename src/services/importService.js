@@ -43,6 +43,9 @@ export async function getExistingFingerprints() {
  * to change regardless of how the instrumental was obtained.
  */
 export async function attachInstrumental(song, file) {
+  if (!isAudioFile(file)) throw new Error("Invalid audio file");
+  song = await Songs.get(song.id);
+  if (!song) throw new Error("Song no longer exists");
   const updated = {
     ...song,
     instrumentalBlob: file,

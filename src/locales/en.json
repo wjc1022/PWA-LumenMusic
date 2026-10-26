@@ -28,7 +28,13 @@
     "searchPlaceholder": "Search songs, artists, albums...",
     "noResults": "No songs match your search.",
     "songCount": "{{count}} songs",
-    "importMore": "Import songs"
+    "importMore": "Import songs",
+    "manageResources": "Manage song resources",
+    "lyricsSlot": "Lyrics slot (any language)",
+    "replaceLyrics": "Add / replace lyrics file",
+    "replaceInstrumental": "Add / replace instrumental",
+    "resourceSaved": "Resource saved",
+    "resourceError": "Import failed. Choose a valid text lyrics or audio file. Existing resources are kept."
   },
   "playlists": {
     "title": "Playlists",
@@ -84,6 +90,9 @@
     "license": "License"
   },
   "player": {
+    "variantSwitching": "Switching…",
+    "variantFailed": "Audio switch failed. Previous audio restored. Retry or replace the file in Library.",
+    "variantRestoreFailed": "Audio switch failed and previous audio could not be restored. Playback stopped. Select the song again or replace the file in Library.",
     "nothingPlaying": "Nothing playing",
     "pickASong": "Pick a song to start",
     "play": "Play",
@@ -94,26 +103,20 @@
     "shuffleOff": "Shuffle off",
     "favorite": "Add to favorites",
     "unfavorite": "Remove from favorites",
-    "openLyrics": "Open lyrics",
     "repeatOff": "Repeat off",
     "repeatAll": "Repeat all",
     "repeatOne": "Repeat one",
     "vocals": "Vocals",
     "instrumental": "Instrumental",
-    "noInstrumental": "No instrumental version is available for this song yet.",
-    "addInstrumental": "Add instrumental version",
-    "emptyQueue": "Your queue is empty."
+    "noInstrumental": "Vocals / No instrumental",
+    "emptyQueue": "Your queue is empty.",
+    "queue": "Playback queue"
   },
   "lyrics": {
     "title": "Lyrics",
-    "noLyrics": "No lyrics added for this song yet.",
-    "addLyrics": "Add lyrics",
-    "editLyrics": "Edit lyrics",
-    "save": "Save",
-    "cancel": "Cancel",
+    "noLyrics": "No lyrics",
     "englishTab": "EN",
     "persianTab": "FA",
-    "placeholder": "Paste plain lyrics or LRC, e.g. [00:12.500] or <00:12.500>word.",
     "saved": "Lyrics saved",
     "importLrc": "Import LRC file",
     "importError": "Could not save the lyrics. Please try again.",

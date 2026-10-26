@@ -15,7 +15,8 @@ import { createSortControl } from "../components/sortControl.js";
 import { sortSongs } from "../services/sortService.js";
 import { t, getLang } from "../services/i18nService.js";
 import { localizeNumber } from "../utils/format.js";
-import { playSong, getCurrentSong, toggleFavorite, on } from "../services/audioEngine.js";
+import { selectSong, getCurrentSong, toggleFavorite, on } from "../services/audioEngine.js";
+import { createSongResources } from "../components/songResources.js";
 import { isIOS } from "../utils/platform.js";
 
 let searchTerm = "";
@@ -85,9 +86,11 @@ export async function renderLibrary(container, { onImportRequested, onSongRemove
     }
     const current = getCurrentSong();
     filtered.forEach((song) => {
-      listWrap.appendChild(createSongRow(song, {
+      const card = el("div", { class: "library-song-card" });
+      listWrap.appendChild(card);
+      card.appendChild(createSongRow(song, {
         isPlaying: !!current && current.id === song.id,
-        onPlay: (s) => playSong(s, filtered),
+        onPlay: (s) => selectSong(s, filtered),
         onToggleFavorite: (s) => toggleFavorite(s),
         onRemove: async (s) => {
           await onSongRemoved(s);
@@ -95,6 +98,12 @@ export async function renderLibrary(container, { onImportRequested, onSongRemove
           if (idx > -1) allSongs.splice(idx, 1);
           draw();
         },
+      }));
+      card.appendChild(createSongResources(song, updated => {
+        const index = allSongs.findIndex(item => item.id === updated.id);
+        // Rows and filtered queues close over these objects. Keep their identity
+        // without rebuilding the resource panel (which owns import feedback).
+        if (index >= 0) Object.assign(allSongs[index], updated);
       }));
     });
   }
@@ -104,6 +113,8 @@ export async function renderLibrary(container, { onImportRequested, onSongRemove
     draw();
   });
 
-  unsubscribeTrackChange = on("trackchange", draw);
+  unsubscribeTrackChange = on("trackchange", song => {
+    listWrap.querySelectorAll('.song-row').forEach(row => row.classList.toggle('playing', row.dataset.id === song?.id));
+  });
   draw();
 }

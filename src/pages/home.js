@@ -13,7 +13,7 @@ import { Songs, Recents } from "../database/db.js";
 import { createSongRow } from "../components/songRow.js";
 import { createEmptyState } from "../components/emptyState.js";
 import { t } from "../services/i18nService.js";
-import { playSong, getCurrentSong, toggleFavorite, on } from "../services/audioEngine.js";
+import { selectSong, getCurrentSong, toggleFavorite, on } from "../services/audioEngine.js";
 
 // renderHome() runs every time the user navigates to Home. Without
 // tracking this, each visit would add another "trackchange" listener
@@ -97,7 +97,7 @@ function buildRow(song, queue) {
   const current = getCurrentSong();
   return createSongRow(song, {
     isPlaying: !!current && current.id === song.id,
-    onPlay: (s) => playSong(s, queue),
+    onPlay: (s) => selectSong(s, queue),
     onToggleFavorite: (s) => toggleFavorite(s),
   });
 }

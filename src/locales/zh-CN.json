@@ -28,7 +28,13 @@
     "searchPlaceholder": "搜索歌曲、歌手、专辑……",
     "noResults": "没有找到匹配的歌曲。",
     "songCount": "{{count}} 首歌曲",
-    "importMore": "导入歌曲"
+    "importMore": "导入歌曲",
+    "manageResources": "管理歌曲资源",
+    "lyricsSlot": "歌词存储栏位（不限语言）",
+    "replaceLyrics": "添加／更换歌词文件",
+    "replaceInstrumental": "添加／更换伴奏音频",
+    "resourceSaved": "资源已保存",
+    "resourceError": "导入失败，请选择有效的文本歌词或音频文件。原资源已保留。"
   },
   "playlists": {
     "title": "歌单",
@@ -84,6 +90,9 @@
     "license": "许可证"
   },
   "player": {
+    "variantSwitching": "正在切换…",
+    "variantFailed": "音频切换失败，已恢复之前的音频。请重试或在音乐库更换文件。",
+    "variantRestoreFailed": "音频切换失败，原音频也无法恢复，播放已停止。请重新选歌或在音乐库更换文件。",
     "nothingPlaying": "暂无播放",
     "pickASong": "选择一首歌曲开始播放",
     "play": "播放",
@@ -94,26 +103,20 @@
     "shuffleOff": "关闭随机播放",
     "favorite": "添加到收藏",
     "unfavorite": "取消收藏",
-    "openLyrics": "打开歌词",
     "repeatOff": "关闭循环",
     "repeatAll": "列表循环",
     "repeatOne": "单曲循环",
     "vocals": "原唱",
     "instrumental": "伴奏",
-    "noInstrumental": "这首歌曲尚未添加伴奏。",
-    "addInstrumental": "添加伴奏文件",
-    "emptyQueue": "播放队列为空。"
+    "noInstrumental": "原唱 · 暂无伴奏",
+    "emptyQueue": "播放队列为空。",
+    "queue": "播放队列"
   },
   "lyrics": {
     "title": "歌词",
-    "noLyrics": "这首歌曲尚未添加歌词。",
-    "addLyrics": "添加歌词",
-    "editLyrics": "编辑歌词",
-    "save": "保存",
-    "cancel": "取消",
+    "noLyrics": "暂无歌词",
     "englishTab": "EN",
     "persianTab": "FA",
-    "placeholder": "粘贴纯文本或 LRC 歌词，例如 [00:12.500]，或使用 <00:12.500>文字 标记逐词时间。",
     "saved": "歌词已保存",
     "importLrc": "导入 LRC 文件",
     "importError": "无法保存歌词，请重试。",

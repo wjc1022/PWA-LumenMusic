@@ -8,7 +8,7 @@ import { createSongRow } from "../components/songRow.js";
 import { createSortControl } from "../components/sortControl.js";
 import { sortSongs } from "../services/sortService.js";
 import { t } from "../services/i18nService.js";
-import { playSong, getCurrentSong, toggleFavorite, on } from "../services/audioEngine.js";
+import { selectSong, getCurrentSong, toggleFavorite, on } from "../services/audioEngine.js";
 
 let unsubscribeTrackChange = null;
 
@@ -42,7 +42,7 @@ export async function renderFavorites(container) {
     favSongs.forEach((song) => {
       listWrap.appendChild(createSongRow(song, {
         isPlaying: !!current && current.id === song.id,
-        onPlay: (s) => playSong(s, favSongs),
+        onPlay: (s) => selectSong(s, favSongs),
         onToggleFavorite: async (s) => {
           await toggleFavorite(s);
           s.favorite = !s.favorite;

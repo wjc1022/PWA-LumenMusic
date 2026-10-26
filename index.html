@@ -118,12 +118,10 @@
   <div class="player-sheet-backdrop" id="playerSheetBackdrop"></div>
   <div class="player-sheet glass">
     <div class="player-sheet-handle" aria-hidden="true"></div>
-    <button class="icon-btn player-sheet-close" id="playerSheetClose" aria-label="Close player">✕</button>
+    <button class="icon-btn player-sheet-close" data-i18n-aria="common.close" id="playerSheetClose" aria-label="Close player">✕</button>
 
-    <div class="player-sheet-art-wrap">
-      <img class="player-sheet-cover" id="sheetCover" src="assets/icons/icon-192.png" alt="" />
-    </div>
-
+    <div class="lyrics-lang-toggle"><button class="seg" data-lang="en">EN</button><button class="seg" data-lang="fa">FA</button></div>
+    <div class="lyrics-body" id="lyricsBody"></div>
     <div class="player-sheet-meta">
       <div class="player-sheet-title" id="sheetTitle">Nothing playing</div>
       <div class="player-sheet-artist" id="sheetArtist">Pick a song to start</div>
@@ -160,70 +158,21 @@
 
     <div class="player-sheet-secondary-row">
       <button class="mini-btn" id="sheetFavBtn" aria-label="Add to favorites" aria-pressed="false">♡</button>
-      <button class="sheet-pill-btn" id="sheetSpeedBtn" aria-label="Playback speed">1x</button>
       <button class="sheet-pill-btn" id="sheetVariantBtn" aria-label="Vocals or instrumental">Vocals</button>
-      <button class="mini-btn" id="sheetLyricsBtn" aria-label="Open lyrics">
-        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M4 5h16M4 10h16M4 15h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>
-      </button>
-      <button class="mini-btn" id="sheetQueueBtn" aria-label="Open queue">
+
+      <button class="mini-btn" data-i18n-aria="player.queue" id="sheetQueueBtn" aria-label="Open queue">
         <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M4 6h12M4 12h12M4 18h8M18 15l3 3-3 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
       </button>
     </div>
 
-    <!-- Speed / Queue panels toggle in place below the controls -->
-    <div class="sheet-panel" id="sheetSpeedPanel" hidden></div>
+    <!-- Queue panel -->
     <div class="sheet-panel" id="sheetQueuePanel" hidden></div>
   </div>
 </div>
 
-<!-- ===================== LYRICS MODAL ===================== -->
-<div class="lyrics-modal" id="lyricsModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="lyricsTitle">
-  <div class="lyrics-backdrop" id="lyricsBackdrop"></div>
-  <div class="lyrics-sheet glass">
-    <div class="lyrics-art-bg" id="lyricsArtBg" aria-hidden="true"></div>
-    <div class="lyrics-content">
-      <div class="lyrics-head">
-        <img id="lyricsCover" class="lyrics-cover" src="assets/icons/icon-192.png" alt="" />
-        <div>
-          <div class="lyrics-title" id="lyricsTitle">Song title</div>
-          <div class="lyrics-artist" id="lyricsArtist">Artist</div>
-        </div>
-        <button class="icon-btn" id="lyricsClose" aria-label="Close lyrics">✕</button>
-      </div>
-      <div class="lyrics-lang-toggle">
-        <button class="seg active" data-lang="en">EN</button>
-        <button class="seg" data-lang="fa">فا</button>
-      </div>
-      <div class="lyrics-body" id="lyricsBody"></div>
-      <div class="lyrics-floating-controls" id="lyricsFloatingControls">
-        <button class="mini-btn" id="lyricsPrevBtn" aria-label="Previous track">
-          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M6 6v12M18 6l-9 6 9 6V6z" fill="currentColor"/></svg>
-        </button>
-        <button class="mini-btn play" id="lyricsPlayBtn" aria-label="Play">
-          <svg viewBox="0 0 24 24" width="20" height="20" id="lyricsPlayIcon" aria-hidden="true"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>
-        </button>
-        <button class="mini-btn" id="lyricsNextBtn" aria-label="Next track">
-          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M18 6v12M6 6l9 6-9 6V6z" fill="currentColor"/></svg>
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
-
 <!-- ===================== IMPORT (hidden native input + drag overlay live in JS) ===================== -->
-<!--
-  accept intentionally combines the audio/* MIME wildcard with explicit
-  extensions. iOS Safari's file picker matches accept against a file's
-  UTI (Uniform Type Identifier), and for files from iCloud Drive or
-  certain "On My iPhone" locations that UTI match against a bare
-  "audio/*" is inconsistent — matching files appear enabled while
-  others (often m4a/aac from iCloud) appear greyed out even though
-  they're valid audio. Listing extensions alongside the MIME wildcard
-  is the documented workaround and does not reduce what Android/desktop
-  browsers show, since they match on MIME type first regardless.
--->
-<input type="file" id="globalFileInput" accept="audio/*,.mp3,.m4a,.wav,.aac,.flac,.ogg,.aif,.aiff,.caf,.lrc" multiple hidden />
-<input type="file" id="instrumentalFileInput" accept="audio/*,.mp3,.m4a,.wav,.aac,.flac,.ogg,.aif,.aiff,.caf" hidden />
+<!-- No file type filter: iOS document providers may not classify LRC files. Import services validate the selected files. -->
+<input type="file" id="globalFileInput" multiple hidden />
 
 <script type="module" src="src/main.js"></script>
 </body>

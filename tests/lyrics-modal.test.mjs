@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
 
-// This DOM models only the modal's DOM contract; it does not verify layout.
+// The inline lyrics renderer shares the player sheet's visibility lifecycle.
+// This DOM verifies synchronization, not browser layout.
 class Element {
   constructor(tag = 'div') {
     this.tagName = tag; this.children = []; this.attributes = {}; this.dataset = {};
@@ -40,7 +41,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 
 async function setup(getRecord) {
-  const ids = ['lyricsModal', 'lyricsBody', 'lyricsClose', 'lyricsTitle', 'lyricsArtist', 'lyricsCover', 'lyricsArtBg', 'lyricsBackdrop', 'lyricsPlayBtn', 'lyricsPrevBtn', 'lyricsNextBtn', 'lyricsPlayIcon'];
+  const ids = ['playerSheetModal', 'lyricsBody'];
   const elements = Object.fromEntries(ids.map(id => [id, new Element()]));
   const tabs = ['en', 'fa'].map(lang => { const tab = new Element(); tab.dataset.lang = lang; return tab; });
   const document = new Element();
@@ -70,10 +71,10 @@ async function setup(getRecord) {
     '../services/audioEngine.js': moduleFor({ audioEl: audio, on: (name, callback) => events.set(name, callback), togglePlay() {}, playNext() {}, playPrev() {} }),
     '../lyrics/lrc.mjs': new vm.SourceTextModule(await readFile(new URL('../src/lyrics/lrc.mjs', import.meta.url), 'utf8'), { context }),
   };
-  const modalModule = new vm.SourceTextModule(await readFile(new URL('../src/components/lyricsModal.js', import.meta.url), 'utf8'), { context });
+  const modalModule = new vm.SourceTextModule(await readFile(new URL('../src/components/playerLyrics.js', import.meta.url), 'utf8'), { context });
   await modalModule.link(specifier => { assert.ok(modules[specifier], `Unexpected import ${specifier}`); return modules[specifier]; });
   await modalModule.evaluate();
-  const modal = modalModule.namespace.initLyricsModal();
+  const modal = modalModule.namespace.initPlayerLyrics();
   return { modal, audio, elements, tabs, frames, emit: (name, value) => events.get(name)?.(value), lines: () => elements.lyricsBody.querySelectorAll('.lyric-line') };
 }
 
@@ -99,8 +100,8 @@ test('trackchange replaces the visible song and synchronizes its lyrics', async 
   const state = await setup(async id => ({ en: `[00:00]${id}` }));
   state.modal.open({ id: 'a', title: 'A' }); await flush();
   state.emit('trackchange', { id: 'b', title: 'B', artist: 'Artist' }); await flush();
-  assert.equal(state.elements.lyricsTitle.textContent, 'B');
-  assert.equal(state.elements.lyricsArtist.textContent, 'Artist');
+
+
   assert.equal(state.lines()[0].textContent, 'b');
   assert.equal(state.lines()[0].classList.contains('current'), true);
 });
@@ -126,9 +127,48 @@ test('close cancels animation and invalidates pending lyrics loading', async () 
   assert.equal(state.frames.size, 1);
   state.modal.close();
   assert.equal(state.frames.size, 0);
-  assert.equal(state.elements.lyricsModal.classList.contains('open'), false);
+  assert.equal(state.elements.playerSheetModal.classList.contains('open'), false);
   state.modal.open({ id: 'b', title: 'B' });
   state.modal.close(); pending.resolve({ en: '[00:00]late' }); await flush();
   assert.equal(state.lines().length, 0);
   assert.equal(state.frames.size, 0);
+});
+
+test('preview skips timed blanks and untimed text; seeking resets past and next states', async () => {
+  const state = await setup(async () => ({ en: '[00:01]first\n[00:03]   \n[00:04]\n[00:06]<00:06>next\n[00:09]last\nplain text' }));
+  state.modal.open({ id: 'a' }); await flush();
+  const lines = state.lines();
+  assert.equal(lines[0].classList.contains('next'), true);
+  state.audio.currentTime = 2; state.audio.dispatch('seeked');
+  assert.equal(lines[0].classList.contains('current'), true);
+  assert.equal(lines[3].classList.contains('next'), true);
+  state.audio.currentTime = 4.5; state.audio.dispatch('seeked');
+  assert.equal(lines[2].classList.contains('current'), true);
+  assert.equal(lines[0].classList.contains('past'), true);
+  assert.equal(lines[3].classList.contains('next'), true);
+  assert.ok(lines.slice(1, 3).every(line => !line.classList.contains('next')));
+  state.audio.currentTime = 10; state.audio.dispatch('seeked');
+  assert.ok(lines.every(line => !line.classList.contains('next')));
+  assert.ok(['current', 'next', 'past'].every(name => !lines[5].classList.contains(name)));
+  state.audio.currentTime = 0; state.audio.dispatch('seeked');
+  assert.equal(lines[0].classList.contains('next'), true);
+  assert.ok(lines.every(line => !line.classList.contains('past')));
+});
+
+test('plain text stays uniform and reloading or switching clears old visual states', async () => {
+  let raw = '[00:01]first\n[00:02]second';
+  const state = await setup(async () => ({ en: raw }));
+  state.audio.currentTime = 1.5;state.modal.open({ id: 'a' });await flush();
+  const previous = state.lines();
+  assert.equal(previous[1].classList.contains('next'), true);
+  raw = '中文歌词\nplain text';
+  state.emit('trackchange', { id: 'b' });await flush();
+  assert.ok(state.lines().every(line => line.classList.contains('untimed') && ['current','past','next'].every(name => !line.classList.contains(name))));
+  state.audio.currentTime = 50;state.audio.dispatch('seeked');
+  assert.ok(state.lines().every(line => ['current','past','next'].every(name => !line.classList.contains(name))));
+  raw = '[00:01]reloaded\n[00:05]preview';
+  state.audio.currentTime = 2;state.modal.open({ id: 'b' });await flush();
+  assert.equal(state.lines()[0].classList.contains('current'), true);
+  assert.equal(state.lines()[1].classList.contains('next'), true);
+  assert.ok(state.lines().every(line => !previous.includes(line)));
 });

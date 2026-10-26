@@ -30,7 +30,7 @@ import { t } from "../services/i18nService.js";
 import { isAndroid, isIOS, supportsDirectoryPicker } from "../utils/platform.js";
 import { pickDirectory, scanDirectoryForAudio } from "../services/phoneMusicService.js";
 import { importFiles, getExistingFingerprints } from "../services/importService.js";
-import { playSong, getCurrentSong, toggleFavorite, on } from "../services/audioEngine.js";
+import { selectSong, getCurrentSong, toggleFavorite, on } from "../services/audioEngine.js";
 
 let unsubscribeTrackChange = null;
 
@@ -191,7 +191,7 @@ async function renderDesktopLibraryView(container) {
     sorted.forEach((song) => {
       listWrap.appendChild(createSongRow(song, {
         isPlaying: !!current && current.id === song.id,
-        onPlay: (s) => playSong(s, sorted),
+        onPlay: (s) => selectSong(s, sorted),
         onToggleFavorite: (s) => toggleFavorite(s),
       }));
     });

@@ -17,7 +17,6 @@ import { initTheme } from "./services/themeService.js";
 import { initSideMenu } from "./components/sideMenu.js";
 import { initMiniPlayer } from "./components/miniPlayer.js";
 import { initPlayerSheet } from "./components/playerSheet.js";
-import { initLyricsModal } from "./components/lyricsModal.js";
 import { initImportPanel } from "./components/importPanel.js";
 import { Songs } from "./database/db.js";
 
@@ -93,12 +92,10 @@ async function boot() {
     onImported: () => renderPage(currentPage),
   });
 
-  const lyricsModal = initLyricsModal();
+
 
   initMiniPlayer();
-  initPlayerSheet({
-    onOpenLyrics: (song) => { if (song) lyricsModal.open(song); },
-  });
+  initPlayerSheet();
 
   onLanguageChange(() => renderPage(currentPage));
 

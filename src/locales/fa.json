@@ -28,7 +28,13 @@
     "searchPlaceholder": "جست‌وجوی آهنگ، خواننده، آلبوم...",
     "noResults": "هیچ آهنگی با جست‌وجوی تو مطابقت ندارد.",
     "songCount": "{{count}} آهنگ",
-    "importMore": "وارد کردن آهنگ"
+    "importMore": "وارد کردن آهنگ",
+    "manageResources": "Manage song resources",
+    "lyricsSlot": "Lyrics slot (any language)",
+    "replaceLyrics": "Add / replace lyrics file",
+    "replaceInstrumental": "Add / replace instrumental",
+    "resourceSaved": "Resource saved",
+    "resourceError": "Import failed. Choose a valid text lyrics or audio file. Existing resources are kept."
   },
   "playlists": {
     "title": "پلی‌لیست‌ها",
@@ -84,6 +90,9 @@
     "license": "مجوز"
   },
   "player": {
+    "variantSwitching": "در حال تعویض…",
+    "variantFailed": "تعویض صدا ناموفق بود. صدای قبلی بازیابی شد. دوباره تلاش کنید یا فایل را در کتابخانه عوض کنید.",
+    "variantRestoreFailed": "تعویض و بازیابی صدا ناموفق بود. پخش متوقف شد. آهنگ را دوباره انتخاب کنید یا فایل را در کتابخانه عوض کنید.",
     "nothingPlaying": "چیزی در حال پخش نیست",
     "pickASong": "برای شروع یک آهنگ انتخاب کن",
     "play": "پخش",
@@ -94,26 +103,20 @@
     "shuffleOff": "پخش تصادفی خاموش",
     "favorite": "افزودن به علاقه‌مندی‌ها",
     "unfavorite": "حذف از علاقه‌مندی‌ها",
-    "openLyrics": "نمایش متن ترانه",
     "repeatOff": "تکرار خاموش",
     "repeatAll": "تکرار همه",
     "repeatOne": "تکرار یکی",
     "vocals": "خواننده",
     "instrumental": "بی‌کلام",
-    "noInstrumental": "هنوز نسخه‌ی بی‌کلامی برای این آهنگ موجود نیست.",
-    "addInstrumental": "افزودن نسخه‌ی بی‌کلام",
-    "emptyQueue": "صف پخش تو خالی است."
+    "noInstrumental": "Vocals / No instrumental",
+    "emptyQueue": "صف پخش تو خالی است.",
+    "queue": "Playback queue"
   },
   "lyrics": {
     "title": "متن ترانه",
     "noLyrics": "هنوز متنی برای این آهنگ اضافه نشده.",
-    "addLyrics": "افزودن متن ترانه",
-    "editLyrics": "ویرایش متن ترانه",
-    "save": "ذخیره",
-    "cancel": "انصراف",
     "englishTab": "EN",
     "persianTab": "فا",
-    "placeholder": "متن ساده یا LRC را وارد کنید: [00:12.500]",
     "saved": "متن ترانه ذخیره شد",
     "importLrc": "وارد کردن فایل LRC",
     "importError": "ذخیرهٔ متن ترانه انجام نشد.",

@@ -1,0 +1,215 @@
+<!doctype html><meta charset="utf-8"><title>Unified player browser checks</title>
+<style>body{margin:0;background:#161616;color:white}iframe{border:0;width:100%;height:100vh}pre{position:fixed;top:0;left:0;z-index:999;background:#222c;font-size:12px;max-width:40vw;pointer-events:none}</style>
+<pre id="result">RUNNING</pre><iframe src="../index.html"></iframe>
+<script type="module">
+const result = document.querySelector('#result');
+const frame = document.querySelector('iframe');
+const checks = [];
+frame.contentWindow.addEventListener('error', event => { result.textContent += '\nERROR: '+event.message; });
+frame.contentWindow.addEventListener('unhandledrejection', event => { result.textContent += '\nREJECT: '+event.reason; });
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+async function until(fn, label) {
+  for (let n=0;n<400;n++) { if (await fn()) return; await wait(30); }
+  throw new Error('Timeout: '+label+' '+frame.contentDocument.body.innerText.slice(-300));
+}
+function check(value, label) { if (!value) throw new Error(label); checks.push(label); result.textContent = checks.join('\n'); }
+try {
+  await until(() => frame.contentDocument.querySelector('#page-home .page-head'), 'boot');
+  const w = frame.contentWindow, d = w.document;
+  const db = await w.eval('import("/src/database/db.js")');
+  const engine = await w.eval('import("/src/services/audioEngine.js")');
+  function wav(seconds = 20, name = 'test.wav') {
+    const bytes = new ArrayBuffer(44 + 8000*2*seconds), view = new DataView(bytes);
+    const str = (offset, value) => [...value].forEach((c,i)=>view.setUint8(offset+i,c.charCodeAt(0)));
+    str(0,'RIFF');view.setUint32(4,bytes.byteLength-8,true);str(8,'WAVE');str(12,'fmt ');
+    view.setUint32(16,16,true);view.setUint16(20,1,true);view.setUint16(22,1,true);
+    view.setUint32(24,8000,true);view.setUint32(28,16000,true);view.setUint16(32,2,true);view.setUint16(34,16,true);
+    str(36,'data');view.setUint32(40,bytes.byteLength-44,true);
+    return new w.File([bytes], name, {type:'audio/wav'});
+  }
+  const audio = wav();
+  for (const id of ['browser-a','browser-b']) await db.Songs.add({id,title:id,artist:'Test',audioBlob:audio,duration:20,favorite:true});
+  await db.Lyrics.save('browser-a',{en:'[00:00]<00:00>中文 <00:02>歌词\n[00:04]Second line',fa:'旧的纯文本'});
+  await db.Playlists.add({id:'browser-list',name:'Browser playlist',songIds:['browser-a','browser-b']});
+  if(location.search.startsWith('?preview')) {
+    const size=new URLSearchParams(location.search).get('preview');
+    if(size) {const [width,height]=size.split('x');frame.style.width=width+'px';frame.style.height=height+'px';}
+    await engine.selectSong(await db.Songs.get('browser-a'),await db.Songs.all());
+    engine.audioEl.pause();result.remove();
+    await new Promise(()=>{});
+  }
+  const open = () => d.querySelector('#playerSheetModal').classList.contains('open');
+  await db.Settings.set('playbackRate',1.75);await db.Settings.set('repeatMode','all');
+  await engine.restorePlaybackPreferences();
+  check(engine.audioEl.playbackRate===1 && engine.getRepeatMode()==='all','old speed ignored and repeat preserved');
+  const transfer=await w.eval('import("/src/services/transferService.js")');
+  await transfer.importLibrary(new w.File([JSON.stringify({settings:[{key:'playbackRate',value:0.5},{key:'repeatMode',value:'one'}]})],'old-backup.json'));
+  await engine.restorePlaybackPreferences();
+  check(engine.audioEl.playbackRate===1 && engine.getRepeatMode()==='one' && (await db.Songs.all()).length===2,'old backup speed ignored without clearing media or other preferences');
+  await db.Settings.set('repeatMode','off');await engine.restorePlaybackPreferences();
+  async function navigate(page) {
+    d.querySelector('#playerSheetClose').click();
+    d.querySelector('.menu-item[data-page="'+page+'"]').click();
+    await until(()=>d.querySelector('#page-'+page+' .song-row') || (page==='playlists' && d.querySelector('.playlist-card')),page);
+    if(page==='playlists') {d.querySelector('.playlist-card').click();await until(()=>d.querySelector('#page-playlists .song-row'),'playlist detail');}
+  }
+  for (const page of ['library','home','favorites','playlists']) {
+    await navigate(page);
+    d.querySelector('#page-'+page+' .song-row').click();
+    await until(open,'list expands');
+    check(open(), page+' selection expands');
+  }
+  await until(()=>engine.audioEl.readyState>=1,'audio metadata');
+  d.querySelector('#playerSheetClose').click();check(!open(),'close collapses');
+  d.querySelector('#playBtn').click();await wait(50);check(!open(),'mini play stays collapsed');
+  d.querySelector('#nextBtn').click();await wait(80);check(!open(),'mini next stays collapsed');
+  d.querySelector('#prevBtn').click();await wait(80);check(!open(),'mini previous stays collapsed');
+  d.querySelector('#miniExpand').click();check(open(),'mini information expands');
+  d.querySelector('#sheetNextBtn').click();await wait(100);check(open(),'expanded next stays open');
+  await until(()=>d.querySelector('#lyricsBody').textContent.includes('No lyrics'),'empty lyrics');
+  check(!d.querySelector('#lyricsBody button'),'empty lyrics has no resource actions');
+  check(d.querySelector('#sheetVariantBtn').disabled,'unavailable instrumental disabled');
+  await navigate('library');
+  const rowA=d.querySelector('#page-library .song-row[data-id="browser-a"]');
+  const rowB=d.querySelector('#page-library .song-row[data-id="browser-b"]');
+  rowA.click();await until(()=>engine.audioEl.readyState>=1,'library A metadata');
+  engine.audioEl.pause();
+  d.querySelector('#playerSheetClose').click();
+  let panel = [...d.querySelectorAll('.song-resources')].find(p=>p.textContent.includes('browser-b'));
+  panel.open=true;
+  const lyricsInput = panel.querySelector('input[type=file]');
+  check(!lyricsInput.hasAttribute('accept'),'lyrics picker unrestricted');
+  await db.Lyrics.save('browser-b',{en:'original',fa:'保留另一栏'});
+  panel.querySelector('button').click(); // captures target slot, native picker is suppressed headlessly
+  panel.querySelector('select').value='fa'; // the picker still belongs to the captured EN slot
+  function choose(input,file) {const transfer = new w.DataTransfer();transfer.items.add(file);input.files=transfer.files;input.dispatchEvent(new w.Event('change'));}
+  choose(lyricsInput,new w.File(['[00:00]新歌词\n[00:04]更新'], 'lyrics.lrc'));
+  await until(async()=> (await db.Lyrics.get('browser-b'))?.en?.includes('新歌词'),'save lyrics');
+  check((await db.Lyrics.get('browser-b')).fa==='保留另一栏','captured lyrics slot preserves other slot');
+  check(engine.getCurrentSong().id==='browser-a','non-current lyrics retain playing song');
+  panel.querySelector('select').value='en';
+  lyricsInput.value='';lyricsInput.dispatchEvent(new w.Event('change'));await wait(40);
+  check((await db.Lyrics.get('browser-b')).en.includes('新歌词'),'cancel keeps existing lyrics');
+  panel.querySelector('button').click();choose(lyricsInput,new w.File([new Uint8Array([0,1,2])],'bad.txt'));
+  await until(()=>panel.querySelector('[role=status]').textContent.includes('failed'),'binary rejection');
+  check((await db.Lyrics.get('browser-b')).en.includes('新歌词'),'invalid text keeps existing lyrics');
+  panel.querySelectorAll('button')[1].click();choose(panel.querySelectorAll('input')[1],audio);
+  await until(async()=>!!(await db.Songs.get('browser-b')).instrumentalBlob,'save instrumental');
+  check(!engine.hasInstrumental(),'non-current instrumental does not affect current song');
+  await until(()=>panel.querySelector('[role=status]').textContent==='Resource saved','resource feedback');
+  check(panel.isConnected && rowB===d.querySelector('#page-library .song-row[data-id="browser-b"]'),'resource feedback and existing row retained');
+  rowB.click();
+  check(engine.getCurrentSong().instrumentalBlob?.name==='test.wav' && !d.querySelector('#sheetVariantBtn').disabled,'existing library row uses newly added instrumental immediately');
+  d.querySelector('#sheetVariantBtn').click();await until(()=>engine.getCurrentVariant()==='instrumental' && !engine.getVariantStatus().pending,'added instrumental plays');
+  check(engine.audioEl.duration===20,'added instrumental loads from library row');
+  rowA.click();
+  check(engine.getQueue().find(song=>song.id==='browser-b').instrumentalBlob?.name==='test.wav','library row queue contains added resource');
+  d.querySelector('#sheetNextBtn').click();
+  check(engine.getCurrentSong().id==='browser-b' && engine.hasInstrumental(),'queue next uses newly added resource');
+  d.querySelector('#sheetPrevBtn').click();engine.audioEl.pause();d.querySelector('#playerSheetClose').click();
+  panel.querySelectorAll('button')[1].click();choose(panel.querySelectorAll('input')[1],wav(11,'replacement.wav'));
+  await until(async()=>(await db.Songs.get('browser-b')).instrumentalBlob.name==='replacement.wav','replace instrumental');
+  check(true,'existing instrumental replaced');
+  check(engine.getCurrentSong().id==='browser-a','replacing non-current resource preserves current song');
+  rowB.click();
+  check(engine.getCurrentSong().instrumentalBlob?.name==='replacement.wav','existing library row uses replaced instrumental immediately');
+  rowA.click();
+  check(engine.getQueue().find(song=>song.id==='browser-b').instrumentalBlob?.name==='replacement.wav','same library list builds queue with replaced resource');
+  d.querySelector('#sheetNextBtn').click();
+  check(engine.getCurrentSong().instrumentalBlob?.name==='replacement.wav','queue next uses replaced resource');
+  d.querySelector('#sheetPrevBtn').click();d.querySelector('#sheetPrevBtn').click();
+  check(engine.getCurrentSong().id==='browser-b' && engine.getCurrentSong().instrumentalBlob?.name==='replacement.wav','queue previous uses replaced resource');
+  await until(()=>engine.audioEl.readyState>=1,'queued B metadata');engine.audioEl.pause();
+  await until(()=>engine.audioEl.readyState>=1,'B metadata');engine.audioEl.currentTime=5;
+  check((await engine.switchVariant('instrumental')).ok,'switch instrumental succeeds');
+  check(engine.audioEl.duration===11,'queued replacement is the actual loaded audio');
+  check(engine.audioEl.paused && Math.abs(engine.audioEl.currentTime-5)<0.2,'switch preserves paused position');
+  await until(()=>d.querySelector('.lyric-line.current')?.textContent==='更新','switch lyric sync');
+  await engine.audioEl.play();engine.audioEl.currentTime=3;
+  await engine.switchVariant('vocals');
+  check(!engine.audioEl.paused && Math.abs(engine.audioEl.currentTime-3)<0.5,'switch preserves playing position');
+  const pendingSwitch=engine.switchVariant('instrumental');
+  const reversedSwitch=engine.switchVariant('vocals');
+  await Promise.all([pendingSwitch,reversedSwitch]);
+  check(!engine.audioEl.paused && Math.abs(engine.audioEl.currentTime-3)<0.8,'rapid variant switching retains state');
+  const staleSwitch=engine.switchVariant('instrumental');
+  await engine.selectSong(await db.Songs.get('browser-a'),await db.Songs.all());
+  await staleSwitch;check(engine.getCurrentSong().id==='browser-a' && engine.getCurrentVariant()==='vocals','stale variant restore cannot change new song');
+  // Import a corrupt audio file through the real resource panel, then use the
+  // real song row and player button to exercise browser decode error recovery.
+  d.querySelector('#playerSheetClose').click();
+  panel.querySelectorAll('button')[1].click();choose(panel.querySelectorAll('input')[1],new w.File(['not a WAV'],'broken.wav',{type:'audio/wav'}));
+  await until(async()=>(await db.Songs.get('browser-b')).instrumentalBlob.name==='broken.wav','broken audio saved');
+  rowB.click();await until(()=>engine.audioEl.readyState>=1,'original ready before failed switch');engine.audioEl.pause();engine.audioEl.currentTime=6;
+  d.querySelector('#sheetVariantBtn').click();
+  await until(()=>d.querySelector('.toast-error.visible')?.textContent.includes('Previous audio restored'),'failed switch toast');
+  check(engine.getCurrentVariant()==='vocals' && engine.audioEl.paused && Math.abs(engine.audioEl.currentTime-6)<0.2,'browser decode failure rolls back paused position');
+  check(d.querySelector('#sheetVariantBtn').textContent==='Vocals' && d.querySelector('#sheetVariantBtn').getAttribute('aria-busy')==='false','failed switch button reflects restored version');
+  d.querySelector('#sheetVariantBtn').click();
+  check(engine.getVariantStatus().pending,'failed version can be retried');
+  await until(()=>!engine.getVariantStatus().pending,'retry rollback');
+  engine.audioEl.pause();
+  await engine.selectSong(await db.Songs.get('browser-a'),await db.Songs.all());engine.audioEl.pause();
+  await until(()=>d.querySelectorAll('.lyric-line').length===2,'enhanced lyrics');engine.audioEl.currentTime=2.5;
+  engine.audioEl.dispatchEvent(new w.Event('seeked'));
+  check(d.querySelectorAll('.lyric-word.sung').length===2,'paused seek updates words');
+  d.querySelector('.lyrics-lang-toggle [data-lang=fa]').click();await until(()=>d.querySelector('#lyricsBody').textContent.includes('旧的纯文本'),'legacy slot');
+  check(true,'legacy second slot readable');
+  // Rendering-only regression checks: real computed colors, including word
+  // spans, must remain readable in both themes and both responsive layouts.
+  await db.Lyrics.save('browser-a',{en:'[00:00]past\n[00:01]<00:01>current <00:04>pending\n[00:03]\n[00:05]<00:05>preview\n[00:08]future\nplain text',fa:'plain text'});
+  d.querySelector('.lyrics-lang-toggle [data-lang=en]').click();
+  await until(()=>d.querySelectorAll('.lyric-line').length===6,'readability fixture');
+  engine.audioEl.currentTime=2;engine.audioEl.dispatchEvent(new w.Event('seeked'));
+  const rendered=[...d.querySelectorAll('.lyric-line')];
+  check(rendered[0].classList.contains('past') && rendered[1].classList.contains('current') && rendered[3].classList.contains('next'),'past current and next states skip blank');
+  function luminance(color) {
+    const channels=color.match(/[\d.]+/g).slice(0,3).map(Number).map(value=>{value/=255;return value<=0.04045?value/12.92:((value+0.055)/1.055)**2.4;});
+    return channels[0]*0.2126+channels[1]*0.7152+channels[2]*0.0722;
+  }
+  function contrast(first,second) {const a=luminance(first),b=luminance(second);return (Math.max(a,b)+0.05)/(Math.min(a,b)+0.05);}
+  for(const theme of ['dark','light']) for(const [width,height] of [[390,844],[1280,800]]) {
+    d.documentElement.dataset.theme=theme;frame.style.width=width+'px';frame.style.height=height+'px';await wait(500);
+    const style=node=>w.getComputedStyle(node), surface=style(d.querySelector('#lyricsBody')).backgroundColor;
+    const words=[...d.querySelectorAll('.lyric-word')];
+    check([...rendered,...words].every(node=>style(node).filter==='none' && contrast(style(node).color,surface)>=4.5),'clear readable lines and words '+theme+' '+width);
+    check(parseFloat(style(rendered[1]).fontSize)>parseFloat(style(rendered[3]).fontSize),'current line larger '+theme+' '+width);
+    check(luminance(style(rendered[3]).color)>luminance(style(rendered[4]).color) === (theme==='dark'),'next line contrast emphasis '+theme+' '+width);
+    check(style(rendered[3].querySelector('.lyric-word')).color===style(rendered[3]).color,'preview word inherits line color '+theme+' '+width);
+    check(rendered.every(node=>node.getAnimations().every(animation=>animation.effect.getKeyframes().every(key=>!key.filter || key.filter==='none'))),'animation has no lyric blur '+theme+' '+width);
+    if(w.matchMedia('(prefers-reduced-motion: reduce)').matches)check(rendered.every(node=>style(node).animationName==='none' && style(node).transitionProperty==='none'),'reduced motion '+theme+' '+width);
+  }
+  d.documentElement.dataset.theme='dark';
+  engine.audioEl.currentTime=3.5;engine.audioEl.dispatchEvent(new w.Event('seeked'));
+  check(rendered[2].classList.contains('current') && rendered[3].classList.contains('next'),'interlude keeps next effective lyric');
+  engine.audioEl.currentTime=0;engine.audioEl.dispatchEvent(new w.Event('seeked'));
+  check(rendered[1].classList.contains('next') && rendered.every(node=>!node.classList.contains('past')),'backward seek clears past and updates preview');
+  d.querySelector('.lyrics-lang-toggle [data-lang=fa]').click();await until(()=>d.querySelectorAll('.lyric-line').length===1,'plain rendering');
+  check(!d.querySelector('.lyric-line.current,.lyric-line.next,.lyric-line.past') && d.querySelector('.lyric-line.untimed'),'plain lyrics have no timed presentation states');
+  check(!d.querySelector('#sheetCover,#sheetSpeedBtn,#sheetLyricsBtn,#lyricsModal,textarea'),'removed controls absent');
+  for(const [width,height] of [[390,844],[844,390],[320,480],[1280,800],[1024,360]]) {
+    frame.style.width=width+'px';frame.style.height=height+'px';await wait(500);
+    const controls=d.querySelector('.player-sheet-secondary-row').getBoundingClientRect();
+    const lyrics=d.querySelector('#lyricsBody').getBoundingClientRect();
+    check(controls.bottom<=height+1 && controls.top>=0 && lyrics.height>=35 && lyrics.top>=0,'layout '+width+'x'+height);
+    if(width===1280)check(d.querySelector('.player-sheet').getBoundingClientRect().width>700,'desktop width expanded');
+  }
+  frame.style.width='100%';frame.style.height='100vh';
+  // Reload the actual app and read the persisted resources in its new realm.
+  frame.contentWindow.location.reload();await wait(300);
+  await until(()=>frame.contentDocument.querySelector('#page-home .page-head'),'reload');
+  const restored=await frame.contentWindow.eval('import("/src/database/db.js")');
+  const restoredEngine=await frame.contentWindow.eval('import("/src/services/audioEngine.js")');
+  check(restoredEngine.audioEl.playbackRate===1 && await restored.Settings.get('playbackRate')===0.5,'startup ignores imported speed setting after reload');
+  check((await restored.Lyrics.get('browser-b')).en.includes('新歌词') && !!(await restored.Songs.get('browser-b')).instrumentalBlob,'resources persist across reload');
+  await until(()=>frame.contentWindow.navigator.serviceWorker.controller,'service worker control');
+  const cache=await caches.open('lumen-shell-v13');
+  for(const path of ['src/services/lyricFile.js','src/components/songResources.js','src/components/playerLyrics.js','src/lyrics/lrc.mjs']) check(!!await cache.match(new URL('../'+path,location.href)),'cached '+path);
+  await fetch('/__offline',{method:'POST'});
+  frame.contentWindow.location.reload();await wait(200);
+  await until(()=>frame.contentDocument.querySelector('#page-home .song-row'),'offline reload');
+  check(true,'app and local songs load with server unavailable');
+  result.dataset.status='PASS';result.textContent='PASS '+checks.length+'\n'+checks.join('\n');
+} catch(error) {result.dataset.status='FAIL';result.textContent='FAIL '+error.stack+'\n'+result.textContent+'\n'+checks.join('\n');}
+await fetch('/__result', {method:'POST', body:result.textContent});
+</script>

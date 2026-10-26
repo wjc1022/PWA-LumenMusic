@@ -14,7 +14,7 @@ import { sortSongs } from "../services/sortService.js";
 import { t } from "../services/i18nService.js";
 import { localizeNumber } from "../utils/format.js";
 import { getLang } from "../services/i18nService.js";
-import { playSong, getCurrentSong } from "../services/audioEngine.js";
+import { selectSong, getCurrentSong } from "../services/audioEngine.js";
 import { generateId } from "../utils/id.js";
 
 let expandedId = null;
@@ -131,7 +131,7 @@ function buildPlaylistDetail(playlist, allSongs, lang, rootContainer) {
     const row = createSongRow(song, {
       isPlaying: !!current && current.id === song.id,
       draggable: isCustomOrder,
-      onPlay: (s) => playSong(s, songs),
+      onPlay: (s) => selectSong(s, songs),
       onRemove: async (s) => {
         playlist.songIds = playlist.songIds.filter((id) => id !== s.id);
         await Playlists.update(playlist);
