@@ -1,47 +1,62 @@
-# KTV development plan
+﻿# KTV 播放体验改造计划
 
-## Agreed scope
+更新日期：2026-10-26。此次仅准备文档，应用代码尚未按此方案修改。
 
-1. Local audio with improved synchronized LRC lyrics.
-2. Original/instrumental track switching, preserving playback position and lyrics synchronization.
-3. Google Drive resource loading; other providers can follow.
+## 现状与问题
+现有底部迷你条、完整播放器和独立歌词面板互相切换。看歌词需要两次展开，关闭歌词后无法回到完整播放器，导致播放控制与看词反复切换。
+现有代码具备 LRC 解析、行及逐字同步、同名文件关联、本地持久化、独立伴奏切换、保留原始 LRC 的 .lmp 导入导出；不代表所有设备均已验收。
+iPhone 已反馈歌词入口无法选取 .lrc，改为 .txt 后也未出现在可选对象中。原因尚未确定。
 
-Lumen remains the application. Karaoke Stage provides reference algorithms and behavior, not a second application to maintain.
+## 统一播放器
+- 移除独立歌词面板，歌词直接显示在完整播放器歌名上方，替代大封面。
+- 有歌词显示滚动同步歌词；无歌词只显示“暂无歌词”，不提供添加按钮。
+- 保留歌曲名、歌手、进度与时间、上一首、播放/暂停、下一首、随机、循环、收藏、队列、原唱/伴奏。
+- 移除倍速按钮和面板、歌词手动编辑页面、所有资源导入与更换入口。
+- 未关联伴奏时明确表示不可切换，不弹出导入入口。
+- 歌词独立滚动，控制区始终可达。关闭只收起，不停止播放。
 
-## Phase 1
+## 展开规则
+| 操作 | 行为 |
+| --- | --- |
+| 首页、音乐库、收藏、歌单等列表主动选歌 | 播放并展开完整播放器，直接看词 |
+| 点击迷你条歌曲信息 | 展开 |
+| 关闭完整播放器 | 收起，音乐继续 |
+| 展开时切歌或自动连播 | 保持展开并更新 |
+| 收起时迷你条暂停/继续、上一首/下一首 | 保持收起 |
+| 收起时自动连播或恢复播放 | 不强制展开 |
+展开应反映选歌意图，不应直接绑定所有 trackchange/playstate。播放失败不得展示与实际播放不符的状态。
 
-Implement independent LRC parsing and time lookup, integrate into the existing lyrics view, preserve stored lyrics and manual editing, and support local LRC association. Support fractions, repeated timestamps, offsets, timed blank lines and enhanced word timing.
+## 音乐库资源管理
+- 每首歌提供管理入口，添加、更换歌词文件和伴奏音频。
+- 目标绑定所选歌曲，不依赖当前播放歌曲；未播放的歌曲也可管理。
+- 取消选择或读取失败不破坏旧资源；更新当前歌曲资源后及时刷新。
+- 保留同名音频/LRC 同时导入关联，不假设可以读取未选择的相邻文件。
+- 排查 iPhone 文件选择，必要时放宽 accept，读取后验证；兼容无时间戳纯文本。
+- 不增加手动编辑器、资源删除或其他未确认功能。
 
-Confirmed: full scrolling lyrics view and single-song LRC import first. After initial browser acceptance with the user's audio/LRC pair, same-name pairing during song import was added to reduce manual steps.
+## 布局
+手机以歌词为主要区域，下方是歌曲信息、进度及控制；适配安全区域、横竖屏和较矮窗口。桌面扩大播放器及歌词空间，具体尺寸由实测决定，不重新加入大封面。延续现有视觉风格。
 
-## Validation
+## 实施顺序
+1. 检查音频事件、歌词生命周期及数据兼容。
+2. 接入统一播放器，移除旧面板、编辑与倍速界面。
+3. 接入音乐库资源管理、失败恢复和当前歌曲刷新，排查 iPhone。
+4. 从列表选歌入口接入自动展开，保留其他播放事件的收起语义。
+5. 完成响应式、文案、缓存清单及版本更新。
+6. 更新测试并执行浏览器验收，记录实际结果。
 
-Parser tests cover timestamp boundaries, seeking backwards, metadata/offset ordering, repeated lines and words, blank interludes, plain text and malformed input. Browser checks cover playback/pause/seek, song changes while lyrics are open, refresh persistence, English/Persian switching, and offline module availability.
+## 验收
+- 各列表选歌直接展开；关闭不停止；迷你条操作不弹出；重新选歌会展开。
+- 歌词、进度和控制共存，无独立歌词页面、封面或倍速入口。
+- 播放、暂停定位、前后跳转、快速切歌和原唱/伴奏切换同步正确。
+- 管理非当前歌曲不误改当前歌曲；取消/失败保留旧资源。
+- 更换当前歌词后刷新显示；重载后资源仍存在。
+- 旧 EN/FA、中文、普通文本、增强 LRC、旧 .lmp 数据保持兼容。
+- 真实 iPhone 验证 .lrc/.txt 选择，记录系统、浏览器、文件来源及结果。
+- 手机横竖屏、桌面及矮窗口不遮挡控制。
+- HTTPS 或 localhost 验证应用壳更新与离线；局域网 HTTP 不作为 Service Worker 验收。
 
-No microphone scoring, vocal separation, CDG integration or cloud authorization is included in phase 1.
-
-## Current implementation status
-
-Implemented parser, scrolling line/word highlighting, single-song LRC import,
-raw-text local persistence, track-change refresh, paused seeking and lossless
-raw LRC preservation in .lmp packages. App-shell cache includes the parser.
-
-17 automated parser, modal integration, same-name import and real ZIP roundtrip tests pass:
-
-```
-node --experimental-vm-modules --test tests/lrc.test.mjs tests/lmp-lyrics.test.mjs tests/lyrics-modal.test.mjs tests/import-lyrics.test.mjs
-```
-
-Browser automation had no available browser connection. Visual layout,
-real audio timing, browser persistence and installed-PWA offline acceptance
-remain to be verified with the user's media; automated modal tests use DOM
-and database stubs and do not establish those browser behaviors.
-
-The user reported the initial scrolling/synchronization experience met the
-minimum requirement. Same-name import is implemented and unit-tested but
-still needs browser acceptance. Select audio and LRC together using the
-song picker or drag/drop. A browser cannot read an unselected sibling file.
-Pairing ignores extension/case, normalizes Unicode, and respects relative
-folder paths when supplied. Duplicate LRC matches are skipped with a warning;
-failed lyrics reads leave the audio imported. Phone Music directory scanning
-still imports audio only; directory sidecar discovery is not yet implemented.
+## 范围与限制
+不包含人声分离、麦克风、评分、CDG、云授权或 Google Drive。伴奏需匹配原唱时间轴；更换源不承诺无缝切换。
+资源按浏览器及站点来源本地保存，不跨设备或不同地址自动共享。迁移伴奏优先验证 .lmp；旧 JSON 备份只显式序列化 audioBlob，不能宣称完整支持伴奏备份。
+历史测试结果不是本轮结论，未做真实设备或离线检查的项目明确标为未验证。

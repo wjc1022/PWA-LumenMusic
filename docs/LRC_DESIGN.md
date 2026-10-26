@@ -1,20 +1,48 @@
-# LRC design
+﻿# 歌词解析、存储与统一播放器设计
 
-## Parser contract
+更新日期：2026-10-26。解析与存储约定继续有效；统一界面及资源管理是待实施目标。
 
-`src/lyrics/lrc.mjs` exports:
+## 解析契约
+src/lyrics/lrc.mjs 导出：
+- parseLrc(text)：{ lines, metadata, offsetMs }。
+- 行：{ time: number | null, text: string, words?: [{ time, text }] }。单位为秒，逐字内容保留空格。
+- findActiveLine(lines, seconds)、findActiveWord(words, seconds)：查找时间之前或恰好到达的最后一项，无匹配返回 -1。
+支持 BOM/CRLF、任意位分钟、有效秒数、1–3 位小数、重复时间戳、元数据、增强逐字标签。正 offset 提前时间，全部解析后统一应用，不受标签位置影响。重复增强行按时间差平移逐字时间。保留带时间戳空行作为间奏及普通无时间文本；定时项稳定排序，混合文档无时间项置后。异常输入不使界面崩溃。
 
-- `parseLrc(text)`: `{ lines, metadata, offsetMs }`.
-- Each line: `{ time: number | null, text: string, words?: [{ time, text }] }`. Times are seconds, words preserve spaces.
-- `findActiveLine(lines, seconds)`: last timed line at or before the playback time, or -1.
-- `findActiveWord(words, seconds)`: last word at or before the playback time, or -1.
+## 存储
+继续使用 lyrics store，以 songId 为键保存 en/fa 原始字符串，显示时解析。不用行数组覆盖原始 LRC，不删除旧普通文本记录，不清空用户数据。
+EN/FA 是存储栏位，不限制内容语言。中文界面当前默认 en，fa 界面默认 fa。统一播放器继续让已有两栏记录可访问，具体切换控件可简化；不静默丢弃另一栏，不增加自动翻译或 zh-CN 数据迁移。
 
-Support BOM/CRLF, arbitrary minute digits, valid seconds, 1–3 fractional digits, repeated line timestamps, metadata and enhanced word tags. Positive LRC offset shifts timestamps earlier, applied after parsing regardless of tag position. Repeated enhanced lines shift their word times by the repeat delta. Preserve timed blank lines for interludes and plain untimed text for compatibility. Timed entries sort stably, with untimed entries after them in mixed documents.
+## 统一显示与生命周期
+- 歌词位于完整播放器歌名上方，替代大封面；无独立歌词弹层。
+- 无歌词只显示“暂无歌词”，无添加、更换或编辑入口。
+- 歌词独立滚动，保留当前行居中、高亮及逐字状态；普通文本静态显示。
+- 歌名、歌手、进度和控制共存，删除倍速界面。
+- 打开、播放、暂停、定位、元数据载入、切歌和音频版本切换均按 audioEl.currentTime 同步。
+- requestAnimationFrame 仅在可见且播放时运行；收起、暂停、结束后停止，不累计独立时间。
+- 收起不停止音频；重新展开立即同步当前位置，不重复累积监听器。
+- 异步读取使用修订号或等效防护，防止旧歌曲/栏位覆盖新状态；切歌清理旧节点及索引。
+- 更换当前歌词后重新读取、解析、同步，尊重减少动态效果偏好。
 
-## Storage and integration
+## 音乐库导入
+- 显式绑定目标 songId 和歌词栏位，不依赖当前播放歌曲。
+- 取消不写入，读取或保存失败保留旧资源；更换一个栏位保留另一个。
+- 支持 LRC 与普通文本，无时间戳不构成拒绝理由。
+- iPhone .lrc 不可选、.txt 不可见的问题尚未定位。检查过滤、来源、云文件下载状态及实际选择器行为；必要时放宽 accept，读取后验证。
+- 放宽过滤后应拒绝明显非文本或无法读取的文件并反馈，避免二进制覆盖歌词；判断应兼容 Unicode 文本。
+- 保留同名自动关联：忽略扩展名大小写、规范化 Unicode、有相对路径时尊重目录边界。重复匹配跳过并警告，歌词失败不撤销成功导入的音频。
+- 不提供粘贴、编辑、保存文本的页面。
 
-Retain raw lyrics text in the existing `lyrics` store, keyed by songId, with en/fa slots. Parse at display time. This avoids a database migration and preserves original timing and tags. Language slots are existing storage choices, not a restriction on the script used in imported lyrics.
+## 音频切换
+原唱和伴奏为同一歌曲的独立本地文件，通过同一 audio 元素换源，记录位置与播放/暂停状态，待源就绪后恢复。歌词始终使用真实音频时间。
+播放器只切换已有版本；音乐库负责关联及更换。快速切歌、更换资源时防止旧异步恢复落到错误歌曲，不承诺无缝切换。
 
-Use audioEl.currentTime on open, playback, pause and seek. A requestAnimationFrame loop may improve word timing while the view is open and audio is playing; it must stop when closed, editing or paused. Never derive timing from frame count. Refresh lyrics on trackchange and protect asynchronous loads against stale song/language results.
+## 打包兼容
+.lmp 歌词 JSON 保留 rawLrc: { en, fa } 及既有 languages 行数组。导入优先 rawLrc，保留逐字标签、offset、空白与毫秒；兼容旧行数组，旧消费者仍能读行级数据。
+JSON 备份保留歌词原始文本。旧 JSON 对伴奏 Blob 的序列化问题独立存在，不能把歌词兼容当作完整资源备份兼容。
 
-The .lmp lyrics JSON now contains optional `rawLrc: { en, fa }` alongside its existing `languages` line arrays. New imports prefer rawLrc to retain word tags, offsets, whitespace and fractions exactly. Older consumers still read the line arrays (line timing only). Legacy line-array imports retain milliseconds. JSON backups already retain raw lyrics.
+## 验证
+解析器覆盖时间边界、反向定位、offset 顺序、重复行/逐字、空白间奏、普通文本及异常输入。
+集成覆盖暂停定位、快速切歌、异步竞争、收起后停止循环、重新展开、歌词更换及音频版本切换。
+验证旧 EN/FA、中文、原始 LRC 的 .lmp 往返、刷新持久化、真实 iPhone 选取及离线模块。
+命令及整体验收见 AGENTS.md 和 KTV_PLAN.md。旧 lyrics-modal 测试随新结构更新，不以维持已删除 DOM 为目标。

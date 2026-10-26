@@ -1,12 +1,34 @@
-# Development context
+﻿# Agent 工作约定
 
-- Lumen is the application being extended. `../karaoke-stage` is a read-only implementation reference.
-- Keep the app framework-free and dependency-free; serve the repository over HTTP. No build step is required.
-- Read `docs/KTV_PLAN.md` and `docs/LRC_DESIGN.md` before changing lyrics or playback.
-- Keep imported media and lyrics local. Google Drive integration is a later phase.
-- Preserve existing English/Persian lyrics records and plain-text editing.
-- Use audio element currentTime as the playback clock; never accumulate a separate lyrics clock.
-- Add new runtime modules to sw.js and change its cache version when shipping app-shell changes.
-- Test parser behavior with `node --test tests/lrc.test.mjs`. Verify playback, paused seeking, track switching, persistence, and offline behavior in a browser when available.
-- Run all lyrics tests with `node --experimental-vm-modules --test tests/*.test.mjs` (use explicit filenames if the shell does not expand wildcards). VM tests stub browser/database interfaces; they do not replace real browser acceptance.
-- Delegate only disjoint file ownership, with explicit interfaces and acceptance criteria. The primary agent integrates and verifies the result.
+## 项目约束
+- 开发对象是本目录 Lumen；../karaoke-stage 仅为只读实现参考。
+- 修改前阅读 docs/KTV_PLAN.md 和 docs/LRC_DESIGN.md。文档描述待实施目标，不表示已经完成。
+- 保持原生 HTML/CSS/JavaScript，无框架、无新增依赖、无构建步骤，使用静态 HTTP 服务。
+- 导入媒体和歌词保持本地；云接入不在本轮范围内。
+- 先检查实际代码与工作区改动，保留用户已有修改。
+
+## 已确认要求
+- 合并完整播放器与歌词面板，移除大封面，在歌名上方直接显示同步歌词。
+- 无歌词只显示“暂无歌词”，播放器没有添加、更换或导入资源入口。
+- 歌词及伴奏的添加、更换放在音乐库，绑定明确目标歌曲。
+- 移除歌词手动编辑页面和倍速界面；保留已有纯文本歌词读取能力。
+- 从歌曲列表主动选歌时自动展开；收起后的迷你条操作与自动连播不强制展开。
+- 保留进度、播放控制、随机、循环、收藏、队列及原唱／伴奏切换。
+- 手机适配安全区域；桌面扩大歌词和播放空间，不沿用明显偏窄的手机卡片。
+
+## 数据与运行
+- 保留既有歌曲、伴奏、EN/FA 歌词及原始 LRC，不清空用户数据。
+- 旧“保留纯文本编辑”要求被新需求替代：保留数据及显示，不保留编辑页面。
+- 歌词栏位不限制文本语言，中文等内容仍需正常显示。
+- audio.currentTime 是唯一歌词时钟，不累计独立时间。
+- 异步读取防止旧歌曲结果覆盖新状态；音频版本切换保留位置与播放状态。
+- 新运行时模块加入 sw.js，发布应用壳变更时更新缓存版本。
+- 不主动委派子 Agent，除非用户明确要求；获授权后按互不重叠职责分工，由主 Agent 集成。
+
+## 验证
+- 解析器：node --test tests/lrc.test.mjs
+- 现有相关测试：node --experimental-vm-modules --test tests/lrc.test.mjs tests/lmp-lyrics.test.mjs tests/lyrics-modal.test.mjs tests/import-lyrics.test.mjs
+- 根据统一播放器结构更新旧 modal 测试，保留同步、竞争及兼容性覆盖。
+- 验证选歌展开、收起、暂停定位、切歌、资源管理、持久化、响应式和离线行为。
+- 桩测试不替代浏览器，桌面测试不证明真实 iPhone 文件选择兼容。
+- 汇报实际检查与未验证项，不沿用历史测试通过数量。
