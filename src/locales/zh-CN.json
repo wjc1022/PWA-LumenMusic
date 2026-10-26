@@ -30,7 +30,6 @@
     "songCount": "{{count}} 首歌曲",
     "importMore": "导入歌曲",
     "manageResources": "管理歌曲资源",
-    "lyricsSlot": "歌词存储栏位（不限语言）",
     "replaceLyrics": "添加／更换歌词文件",
     "replaceInstrumental": "添加／更换伴奏音频",
     "resourceSaved": "资源已保存",

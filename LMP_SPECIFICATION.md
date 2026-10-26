@@ -1,4 +1,4 @@
-# Lumen Music Package (.lmp) — Specification v1
+# Lumen Music Package (.lmp) — Specification v2
 
 **Format version:** 1
 **Status:** Stable
@@ -79,7 +79,7 @@ Sits at the package root. Describes the package as a whole.
 | `author`                | string | no       | Package creator's name.                       |
 | `description`           | string | no       | Short free-form description.                  |
 | `createdAt`              | string | no       | ISO 8601 timestamp.                            |
-| `packageFormatVersion`   | number | recommended | The `.lmp` spec version this package targets (currently `1`). |
+| `packageFormatVersion`   | number | recommended | The `.lmp` spec version this package targets (currently `2`). |
 
 ```json
 {
@@ -88,7 +88,7 @@ Sits at the package root. Describes the package as a whole.
   "author": "Behnood Shafiei",
   "description": "Songs for long drives",
   "createdAt": "2026-07-06T12:00:00.000Z",
-  "packageFormatVersion": 1
+  "packageFormatVersion": 2
 }
 ```
 
@@ -137,41 +137,19 @@ responsible for having the rights to distribute.
 
 ## 6. `lyrics/<id>.json`
 
-Bilingual lyrics for one song. Each language is an array of lines — either
-plain strings, or objects with a `time` (seconds) for sync highlighting.
+Each song has one original lyrics string, with any language or bilingual text.
 
 ```json
-{
-  "id": "perfect",
-  "languages": {
-    "en": [
-      { "time": 0, "text": "First line" },
-      { "time": 4, "text": "Second line" }
-    ],
-    "fa": [
-      "متن ترانه بدون زمان‌بندی هم قابل قبول است"
-    ]
-  }
-}
+{"id":"perfect","text":"[00:00.125]First line\n[00:04.250]Second line"}
 ```
 
-- Both `en` and `fa` are optional; an empty array (or an absent key) means
-  no lyrics in that language.
-- Lines may mix plain strings and `{ time, text }` objects within the same
-  array — plain strings just won't highlight during playback.
-- If the referenced lyrics file is missing or invalid JSON, the affected
-  song still imports — just without lyrics — and a warning is surfaced.
+The `text` string is required. Preserve it exactly, including enhanced word tags,
+offsets, BOM, line endings and whitespace. Plain text and empty strings are valid.
+There are no language slots, parsed line arrays or fallback fields. UI language
+has no effect on lyrics. Legacy language records are not converted or migrated.
+Invalid lyrics are skipped with a warning while the audio can still be imported.
 
 ---
-
-### Optional raw LRC preservation
-
-Lyrics JSON may additionally contain `rawLrc: { "en": "...", "fa": "..." }`.
-Each value is the original lyrics text, including enhanced word timing,
-offsets and fractional timestamps. New Lumen imports prefer a string in
-rawLrc over the corresponding languages array. The languages arrays remain
-available for older readers and contain parsed line timing with the LRC
-offset applied. Raw text must not have that offset applied a second time.
 
 ## 7. `playlists/<name>.json`
 
@@ -266,9 +244,9 @@ this document alone.
 The export wizard can include additional optional data. None of these
 change the required shape described above — they're either extra,
 ignorable fields on an existing file, or new optional root-level files —
-so packages built by older versions of Lumen remain fully valid, and
-packages built with these fields still open correctly in an older reader
-(unknown fields/files are ignored, not rejected).
+and unknown optional fields/files can be ignored. The v2 lyrics structure
+uses a single raw text string; legacy language arrays are not converted,
+and older readers are not expected to read v2 lyrics.
 
 **Extra fields on `metadata/<id>.json`** (all optional):
 

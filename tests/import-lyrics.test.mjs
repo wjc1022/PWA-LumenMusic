@@ -29,17 +29,16 @@ test('same-name sidecars pair regardless of order, case, Unicode normalization o
   const h = await setup();
   await h.api.importFiles([lrc('CAFÉ.LRC'), audio('cafe\u0301.mp3'), audio('other.mp3')], undefined, h.options);
   assert.equal(h.songs.length, 2);
-  assert.equal(h.lyrics.get('song-1').en, '[00:01.250]test');
+  assert.equal(h.lyrics.get('song-1'), '[00:01.250]test');
   assert.equal(h.lyrics.has('song-2'), false);
   assert.equal(h.attached.length, 1);
 });
 
-test('matching uses relative folders and preserves the chosen language slot', async () => {
+test('matching uses relative folders and stores one raw lyrics text', async () => {
   const h = await setup();
-  await h.api.importFiles([audio('song.mp3', 'a/song.mp3'), audio('song.mp3', 'b/song.mp3'), lrc('song.lrc', 'folder B', 'b/song.lrc')], undefined, { ...h.options, lyricsLanguage: 'fa' });
+  await h.api.importFiles([audio('song.mp3', 'a/song.mp3'), audio('song.mp3', 'b/song.mp3'), lrc('song.lrc', 'folder B', 'b/song.lrc')], undefined, h.options);
   assert.equal(h.lyrics.has('song-1'), false);
-  assert.equal(h.lyrics.get('song-2').fa, 'folder B');
-  assert.equal(h.lyrics.get('song-2').en, '');
+  assert.equal(h.lyrics.get('song-2'), 'folder B');
 });
 
 test('ambiguous and unreadable sidecars do not discard playable audio', async () => {

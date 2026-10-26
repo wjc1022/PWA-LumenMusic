@@ -30,7 +30,6 @@
     "songCount": "{{count}} songs",
     "importMore": "Import songs",
     "manageResources": "Manage song resources",
-    "lyricsSlot": "Lyrics slot (any language)",
     "replaceLyrics": "Add / replace lyrics file",
     "replaceInstrumental": "Add / replace instrumental",
     "resourceSaved": "Resource saved",

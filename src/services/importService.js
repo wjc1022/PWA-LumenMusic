@@ -119,8 +119,7 @@ export async function importFiles(fileList, onProgress, options = {}) {
         try {
           const text = await withTimeout(matches[0].text(), 10000, null);
           if (text === null) throw new Error("LRC read timed out");
-          const lang = options.lyricsLanguage === "fa" ? "fa" : "en";
-          await Lyrics.save(song.id, { en: "", fa: "", [lang]: text });
+          await Lyrics.save(song.id, text);
           options.onLyricsImported?.(song);
         } catch (error) {
           // A failed sidecar must not discard an otherwise playable song.

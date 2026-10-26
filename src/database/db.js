@@ -12,7 +12,7 @@
  *                                       dateAdded }
  *   playlists  keyPath: "id"      -> { id, name, songIds: [], dateCreated }
  *   recents    keyPath: "id"      -> { id (=songId), playedAt }
- *   lyrics     keyPath: "songId"  -> { songId, en: string, fa: string }
+ *   lyrics     keyPath: "songId"  -> { songId, text: string }
  *   settings   keyPath: "key"     -> { key, value }
  * ---------------------------------------------------------------
  */
@@ -158,7 +158,10 @@ export const Recents = {
 
 export const Lyrics = {
   get: (songId) => get("lyrics", songId),
-  save: (songId, { en = "", fa = "" }) => put("lyrics", { songId, en, fa }),
+  save: (songId, text) => {
+    if (typeof text !== "string") throw new TypeError("Lyrics must be raw text");
+    return put("lyrics", { songId, text });
+  },
   remove: (songId) => del("lyrics", songId),
 };
 
@@ -187,7 +190,8 @@ export async function exportAllRaw() {
     getAll("recents"),
     getAll("settings"),
   ]);
-  const lyrics = await getAll("lyrics");
+  const lyrics = (await getAll("lyrics")).filter(row => typeof row.text === "string")
+    .map(({ songId, text }) => ({ songId, text }));
   return { songs, playlists, recents, lyrics, settings: settingsRows };
 }
 
@@ -195,7 +199,9 @@ export async function importAllRaw({ songs = [], playlists = [], recents = [], l
   for (const s of songs) await put("songs", s);
   for (const p of playlists) await put("playlists", p);
   for (const r of recents) await put("recents", r);
-  for (const l of lyrics) await put("lyrics", l);
+  for (const l of lyrics) {
+    if (typeof l?.songId === "string" && typeof l.text === "string") await Lyrics.save(l.songId, l.text);
+  }
   for (const st of settings) await put("settings", st);
 }
 

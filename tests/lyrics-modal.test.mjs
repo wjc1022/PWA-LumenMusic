@@ -43,7 +43,6 @@ const deferred = () => { let resolve; const promise = new Promise(done => { reso
 async function setup(getRecord) {
   const ids = ['playerSheetModal', 'lyricsBody'];
   const elements = Object.fromEntries(ids.map(id => [id, new Element()]));
-  const tabs = ['en', 'fa'].map(lang => { const tab = new Element(); tab.dataset.lang = lang; return tab; });
   const document = new Element();
   const audio = new Element('audio'); Object.assign(audio, { currentTime: 0, paused: false, ended: false, seeking: false });
   const events = new Map(); const frames = new Map(); let nextFrame = 0;
@@ -53,7 +52,7 @@ async function setup(getRecord) {
   });
   const moduleFor = values => new vm.SyntheticModule(Object.keys(values), function () { for (const [key, value] of Object.entries(values)) this.setExport(key, value); }, { context });
   const dom = moduleFor({
-    $: selector => elements[selector.slice(1)], $$: () => tabs,
+    $: selector => elements[selector.slice(1)],
     el: (tag, attrs = {}, children = []) => {
       const node = new Element(tag);
       for (const [key, value] of Object.entries(attrs)) key === 'class' ? node.className = value : node.setAttribute(key, value);
@@ -67,7 +66,7 @@ async function setup(getRecord) {
   const modules = {
     '../utils/dom.js': dom,
     '../database/db.js': moduleFor({ Lyrics: { get: getRecord, save: async () => {} } }),
-    '../services/i18nService.js': moduleFor({ t: key => key, getLang: () => 'en' }),
+    '../services/i18nService.js': moduleFor({ t: key => key }),
     '../services/audioEngine.js': moduleFor({ audioEl: audio, on: (name, callback) => events.set(name, callback), togglePlay() {}, playNext() {}, playPrev() {} }),
     '../lyrics/lrc.mjs': new vm.SourceTextModule(await readFile(new URL('../src/lyrics/lrc.mjs', import.meta.url), 'utf8'), { context }),
   };
@@ -75,11 +74,11 @@ async function setup(getRecord) {
   await modalModule.link(specifier => { assert.ok(modules[specifier], `Unexpected import ${specifier}`); return modules[specifier]; });
   await modalModule.evaluate();
   const modal = modalModule.namespace.initPlayerLyrics();
-  return { modal, audio, elements, tabs, frames, emit: (name, value) => events.get(name)?.(value), lines: () => elements.lyricsBody.querySelectorAll('.lyric-line') };
+  return { modal, audio, elements, frames, emit: (name, value) => events.get(name)?.(value), lines: () => elements.lyricsBody.querySelectorAll('.lyric-line') };
 }
 
 test('opening uses current audio position and backwards seeking resets line and word highlights', async () => {
-  const state = await setup(async () => ({ en: '[00:01]<00:01>one <00:02>two\n[00:04]<00:04>three <00:05>four' }));
+  const state = await setup(async () => ({ text: '[00:01]<00:01>one <00:02>two\n[00:04]<00:04>three <00:05>four' }));
   state.audio.currentTime = 5.5;
   state.modal.open({ id: 'a', title: 'A' }); await flush();
   const lines = state.lines();
@@ -97,7 +96,7 @@ test('opening uses current audio position and backwards seeking resets line and 
 });
 
 test('trackchange replaces the visible song and synchronizes its lyrics', async () => {
-  const state = await setup(async id => ({ en: `[00:00]${id}` }));
+  const state = await setup(async id => ({ text: `[00:00]${id}` }));
   state.modal.open({ id: 'a', title: 'A' }); await flush();
   state.emit('trackchange', { id: 'b', title: 'B', artist: 'Artist' }); await flush();
 
@@ -106,36 +105,36 @@ test('trackchange replaces the visible song and synchronizes its lyrics', async 
   assert.equal(state.lines()[0].classList.contains('current'), true);
 });
 
-test('stale database results cannot overwrite a newer song or language', async () => {
+test('stale database results cannot overwrite a newer song or reload', async () => {
   const requests = [];
   const state = await setup(id => { const request = deferred(); requests.push({ id, ...request }); return request.promise; });
   state.modal.open({ id: 'a', title: 'A' });
   state.emit('trackchange', { id: 'b', title: 'B' });
-  state.tabs[1].dispatch('click');
+  state.modal.open({ id: 'b', title: 'B' });
   assert.deepEqual(requests.map(request => request.id), ['a', 'b', 'b']);
-  requests[2].resolve({ en: '[00:00]English B', fa: '[00:00]Persian B' }); await flush();
-  assert.equal(state.lines()[0].textContent, 'Persian B');
-  requests[1].resolve({ en: '[00:00]stale language' });
-  requests[0].resolve({ en: '[00:00]stale song' }); await flush();
-  assert.equal(state.lines()[0].textContent, 'Persian B');
+  requests[2].resolve({ text: '[00:00]Bilingual B' }); await flush();
+  assert.equal(state.lines()[0].textContent, 'Bilingual B');
+  requests[1].resolve({ text: '[00:00]stale reload' });
+  requests[0].resolve({ text: '[00:00]stale song' }); await flush();
+  assert.equal(state.lines()[0].textContent, 'Bilingual B');
 });
 
 test('close cancels animation and invalidates pending lyrics loading', async () => {
   const pending = deferred(); let calls = 0;
-  const state = await setup(() => ++calls === 1 ? Promise.resolve({ en: '[00:00]ready' }) : pending.promise);
+  const state = await setup(() => ++calls === 1 ? Promise.resolve({ text: '[00:00]ready' }) : pending.promise);
   state.modal.open({ id: 'a', title: 'A' }); await flush();
   assert.equal(state.frames.size, 1);
   state.modal.close();
   assert.equal(state.frames.size, 0);
   assert.equal(state.elements.playerSheetModal.classList.contains('open'), false);
   state.modal.open({ id: 'b', title: 'B' });
-  state.modal.close(); pending.resolve({ en: '[00:00]late' }); await flush();
+  state.modal.close(); pending.resolve({ text: '[00:00]late' }); await flush();
   assert.equal(state.lines().length, 0);
   assert.equal(state.frames.size, 0);
 });
 
 test('preview skips timed blanks and untimed text; seeking resets past and next states', async () => {
-  const state = await setup(async () => ({ en: '[00:01]first\n[00:03]   \n[00:04]\n[00:06]<00:06>next\n[00:09]last\nplain text' }));
+  const state = await setup(async () => ({ text: '[00:01]first\n[00:03]   \n[00:04]\n[00:06]<00:06>next\n[00:09]last\nplain text' }));
   state.modal.open({ id: 'a' }); await flush();
   const lines = state.lines();
   assert.equal(lines[0].classList.contains('next'), true);
@@ -157,7 +156,7 @@ test('preview skips timed blanks and untimed text; seeking resets past and next 
 
 test('plain text stays uniform and reloading or switching clears old visual states', async () => {
   let raw = '[00:01]first\n[00:02]second';
-  const state = await setup(async () => ({ en: raw }));
+  const state = await setup(async () => ({ text: raw }));
   state.audio.currentTime = 1.5;state.modal.open({ id: 'a' });await flush();
   const previous = state.lines();
   assert.equal(previous[1].classList.contains('next'), true);

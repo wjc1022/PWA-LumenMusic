@@ -284,7 +284,7 @@ package.lmp
 ├── manifest.json      → packageName, version, author, description, ...
 ├── songs/              → audio files
 ├── covers/              → cover images
-├── lyrics/               → one bilingual JSON file per song
+├── lyrics/               → one raw lyrics text JSON file per song
 ├── metadata/              → one JSON file per song (title, artist, paths...)
 └── playlists/              → playlist JSON files (store song ids only)
 ```

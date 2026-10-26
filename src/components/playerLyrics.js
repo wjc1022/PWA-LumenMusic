@@ -1,6 +1,6 @@
-﻿import { $, $$, el, clearNode } from '../utils/dom.js';
+﻿import { $, el, clearNode } from '../utils/dom.js';
 import { Lyrics } from '../database/db.js';
-import { t, getLang } from '../services/i18nService.js';
+import { t } from '../services/i18nService.js';
 import { audioEl, on } from '../services/audioEngine.js';
 import { parseLrc, findActiveLine, findActiveWord } from '../lyrics/lrc.mjs';
 
@@ -9,7 +9,6 @@ export function initPlayerLyrics() {
   const body = $('#lyricsBody');
 
   let activeSong = null;
-  let lyricsLang = getLang() === 'fa' ? 'fa' : 'en';
   let lines = [];
   let nodes = [];
 
@@ -94,11 +93,11 @@ export function initPlayerLyrics() {
     body.scrollTop = 0;
     if (!activeSong) return;
     const songId = activeSong.id;
-    const lang = lyricsLang;
+
     try {
       const record = await Lyrics.get(songId);
       if (request !== revision || !isOpen()) return;
-      const raw = record?.[lang] || '';
+      const raw = typeof record?.text === 'string' ? record.text : '';
       lines = parseLrc(raw).lines;
       if (!lines.length) body.appendChild(el('p', { class: 'empty-state' }, t('lyrics.noLyrics')));
       nodes = lines.map(line => {
@@ -117,19 +116,6 @@ export function initPlayerLyrics() {
     }
   }
 
-  $$('.lyrics-lang-toggle .seg').forEach(tab => {
-    tab.classList.toggle('active', tab.dataset.lang === lyricsLang);
-    tab.setAttribute('aria-pressed', String(tab.dataset.lang === lyricsLang));
-    tab.addEventListener('click', () => {
-      $$('.lyrics-lang-toggle .seg').forEach(item => {
-        item.classList.toggle('active', item === tab);
-        item.setAttribute('aria-pressed', String(item === tab));
-      });
-      lyricsLang = tab.dataset.lang;
-  
-      renderView();
-    });
-  });
   on('playstate', startLoop);
   document.addEventListener('visibilitychange', startLoop);
   on('timeupdate', sync);

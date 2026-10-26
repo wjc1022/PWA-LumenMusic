@@ -1,4 +1,3 @@
-import { parseLrc } from "../lyrics/lrc.mjs";
 /**
  * services/lmpService.js
  * ---------------------------------------------------------------
@@ -8,7 +7,7 @@ import { parseLrc } from "../lyrics/lrc.mjs";
  *   manifest.json
  *   songs/<id>.<ext>
  *   covers/<id>.<ext>
- *   lyrics/<id>.json      { id, languages: { en: [...], fa: [...] } }
+ *   lyrics/<id>.json      { id, text: "raw lyrics text" }
  *   metadata/<id>.json    { id, title, artist, album, duration, genre,
  *                            song, cover, lyrics }
  *   playlists/<name>.json { name, description, songs: [id, ...] }
@@ -31,7 +30,7 @@ export class ExportCancelledError extends Error {
   }
 }
 
-const PACKAGE_FORMAT_VERSION = 1;
+const PACKAGE_FORMAT_VERSION = 2;
 
 export class LmpValidationError extends Error {
   constructor(message, details = []) {
@@ -74,31 +73,6 @@ function bytesToDataUrl(bytes, mime) {
     reader.onerror = reject;
     reader.readAsDataURL(blob);
   });
-}
-
-/** Converts our internal lyrics text ("[m:ss] line\n...") to the spec's line-array form. */
-function lyricsTextToLines(text) {
-  return parseLrc(text).lines.map(({time, text}) => ({time, text}));
-}
-
-/** Converts the spec's lyric line array (strings or {time,text} objects) back to our text format. */
-function lyricsLinesToText(lines) {
-  if (!Array.isArray(lines)) return "";
-  return lines.map((line) => {
-    if (typeof line === "string") return line;
-    if (line && typeof line === "object") {
-      const t = typeof line.time === "number" ? line.time : (typeof line.startTime === "number" ? line.startTime : null);
-      const text = line.text ?? "";
-      if (t !== null && isFinite(t)) {
-        const milliseconds = Math.max(0, Math.round(t * 1000));
-        const mins = Math.floor(milliseconds / 60000);
-        const secs = ((milliseconds % 60000) / 1000).toFixed(3).padStart(6, "0");
-        return `[${mins}:${secs}] ${text}`;
-      }
-      return text;
-    }
-    return "";
-  }).join("\n");
 }
 
 /* ------------------------------------------------------------------
@@ -281,13 +255,10 @@ export async function importPackage(file, onProgress) {
     if (hasLyrics && metadata.lyrics && entries.has(metadata.lyrics)) {
       try {
         const lyricsJson = JSON.parse(new TextDecoder().decode(entries.get(metadata.lyrics)));
-        const languages = lyricsJson.languages || {};
-        await Lyrics.save(finalId, {
-          en: typeof lyricsJson.rawLrc?.en === "string" ? lyricsJson.rawLrc.en : lyricsLinesToText(languages.en || []),
-          fa: typeof lyricsJson.rawLrc?.fa === "string" ? lyricsJson.rawLrc.fa : lyricsLinesToText(languages.fa || []),
-        });
+        if (typeof lyricsJson.text !== "string") throw new Error("Missing lyrics text");
+        await Lyrics.save(finalId, lyricsJson.text);
       } catch {
-        validated.warnings.push(`"${metadata.title}": lyrics file was invalid JSON and was skipped.`);
+        validated.warnings.push(`"${metadata.title}": lyrics file must contain a text string and was skipped.`);
       }
     }
 
@@ -477,15 +448,11 @@ export async function exportPackage(options = {}, onProgress) {
     let lyricsPath = null;
     if (includeLyrics) {
       const lyricsRecord = lyricsAll[i];
-      if (lyricsRecord && (lyricsRecord.en?.trim() || lyricsRecord.fa?.trim())) {
+      if (typeof lyricsRecord?.text === "string") {
         lyricsPath = `lyrics/${song.id}.json`;
         const lyricsJson = {
           id: song.id,
-          rawLrc: { en: lyricsRecord.en || "", fa: lyricsRecord.fa || "" },
-          languages: {
-            en: lyricsTextToLines(lyricsRecord.en || ""),
-            fa: lyricsTextToLines(lyricsRecord.fa || ""),
-          },
+          text: lyricsRecord.text,
         };
         zipEntries.push({ name: lyricsPath, data: new TextEncoder().encode(JSON.stringify(lyricsJson, null, 2)) });
       }

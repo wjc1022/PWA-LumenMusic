@@ -9,7 +9,7 @@
 
 import { $, el } from "../utils/dom.js";
 import { importFiles, isAudioFile } from "../services/importService.js";
-import { t, getLang } from "../services/i18nService.js";
+import { t } from "../services/i18nService.js";
 import { isIOS } from "../utils/platform.js";
 
 export function initImportPanel({ onImported }) {
@@ -51,7 +51,6 @@ export function initImportPanel({ onImported }) {
     const imported = await importFiles(allFiles, (i, total) => {
       showToast(`${t("import.processing")} (${i}/${total})`, true);
     }, {
-      lyricsLanguage: getLang(),
       onLyricsImported: () => lyricsCount++,
       onLyricsWarning: () => lyricsWarnings++,
     });

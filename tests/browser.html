@@ -29,7 +29,7 @@ try {
   }
   const audio = wav();
   for (const id of ['browser-a','browser-b']) await db.Songs.add({id,title:id,artist:'Test',audioBlob:audio,duration:20,favorite:true});
-  await db.Lyrics.save('browser-a',{en:'[00:00]<00:00>中文 <00:02>歌词\n[00:04]Second line',fa:'旧的纯文本'});
+  await db.Lyrics.save('browser-a','[00:00]<00:00>中文 <00:02>歌词\n[00:04]Second line');
   await db.Playlists.add({id:'browser-list',name:'Browser playlist',songIds:['browser-a','browser-b']});
   if(location.search.startsWith('?preview')) {
     const size=new URLSearchParams(location.search).get('preview');
@@ -79,20 +79,21 @@ try {
   panel.open=true;
   const lyricsInput = panel.querySelector('input[type=file]');
   check(!lyricsInput.hasAttribute('accept'),'lyrics picker unrestricted');
-  await db.Lyrics.save('browser-b',{en:'original',fa:'保留另一栏'});
-  panel.querySelector('button').click(); // captures target slot, native picker is suppressed headlessly
-  panel.querySelector('select').value='fa'; // the picker still belongs to the captured EN slot
+  await db.Lyrics.save('browser-b','original');
+  panel.querySelector('button').click(); // native picker is suppressed headlessly
   function choose(input,file) {const transfer = new w.DataTransfer();transfer.items.add(file);input.files=transfer.files;input.dispatchEvent(new w.Event('change'));}
   choose(lyricsInput,new w.File(['[00:00]新歌词\n[00:04]更新'], 'lyrics.lrc'));
-  await until(async()=> (await db.Lyrics.get('browser-b'))?.en?.includes('新歌词'),'save lyrics');
-  check((await db.Lyrics.get('browser-b')).fa==='保留另一栏','captured lyrics slot preserves other slot');
+  await until(async()=> (await db.Lyrics.get('browser-b'))?.text?.includes('新歌词'),'save lyrics');
   check(engine.getCurrentSong().id==='browser-a','non-current lyrics retain playing song');
-  panel.querySelector('select').value='en';
+  check(Object.keys(await db.Lyrics.get('browser-b')).sort().join(',')==='songId,text','lyrics stored as one text with no language fields');
+  panel.querySelector('button').click();choose(lyricsInput,new w.File(['[00:00]新歌词 / English\n[00:04]更新'],'replacement.txt'));
+  await until(async()=>(await db.Lyrics.get('browser-b')).text.includes('English'),'replace single lyrics');
+  check((await db.Lyrics.get('browser-b')).text==='[00:00]新歌词 / English\n[00:04]更新','reimport replaces the whole target lyrics');
   lyricsInput.value='';lyricsInput.dispatchEvent(new w.Event('change'));await wait(40);
-  check((await db.Lyrics.get('browser-b')).en.includes('新歌词'),'cancel keeps existing lyrics');
+  check((await db.Lyrics.get('browser-b')).text.includes('新歌词'),'cancel keeps existing lyrics');
   panel.querySelector('button').click();choose(lyricsInput,new w.File([new Uint8Array([0,1,2])],'bad.txt'));
   await until(()=>panel.querySelector('[role=status]').textContent.includes('failed'),'binary rejection');
-  check((await db.Lyrics.get('browser-b')).en.includes('新歌词'),'invalid text keeps existing lyrics');
+  check((await db.Lyrics.get('browser-b')).text.includes('新歌词'),'invalid text keeps existing lyrics');
   panel.querySelectorAll('button')[1].click();choose(panel.querySelectorAll('input')[1],audio);
   await until(async()=>!!(await db.Songs.get('browser-b')).instrumentalBlob,'save instrumental');
   check(!engine.hasInstrumental(),'non-current instrumental does not affect current song');
@@ -153,12 +154,19 @@ try {
   await until(()=>d.querySelectorAll('.lyric-line').length===2,'enhanced lyrics');engine.audioEl.currentTime=2.5;
   engine.audioEl.dispatchEvent(new w.Event('seeked'));
   check(d.querySelectorAll('.lyric-word.sung').length===2,'paused seek updates words');
-  d.querySelector('.lyrics-lang-toggle [data-lang=fa]').click();await until(()=>d.querySelector('#lyricsBody').textContent.includes('旧的纯文本'),'legacy slot');
-  check(true,'legacy second slot readable');
+  await db.Lyrics.save('browser-a','\u4e2d\u6587 / English\n\u0645\u062a\u0646');
+  engine.refreshCurrentSong(engine.getCurrentSong());
+  await until(()=>d.querySelector('#lyricsBody').textContent.includes('English'),'mixed-language lyrics');
+  const i18n=await w.eval('import("/src/services/i18nService.js")');
+  await i18n.setLanguage('fa');engine.refreshCurrentSong(engine.getCurrentSong());
+  await until(()=>d.querySelector('#lyricsBody').textContent.includes('English'),'UI language independence');
+  check(d.querySelector('#lyricsBody').textContent.includes('\u4e2d\u6587') && d.querySelector('#lyricsBody').textContent.includes('\u0645\u062a\u0646'),'UI language does not select or replace lyrics');
+  await i18n.setLanguage('en');
+  check(!d.querySelector('.lyrics-lang-toggle,.song-resources select'),'lyrics language controls removed');
   // Rendering-only regression checks: real computed colors, including word
   // spans, must remain readable in both themes and both responsive layouts.
-  await db.Lyrics.save('browser-a',{en:'[00:00]past\n[00:01]<00:01>current <00:04>pending\n[00:03]\n[00:05]<00:05>preview\n[00:08]future\nplain text',fa:'plain text'});
-  d.querySelector('.lyrics-lang-toggle [data-lang=en]').click();
+  await db.Lyrics.save('browser-a','[00:00]past\n[00:01]<00:01>current <00:04>pending\n[00:03]\n[00:05]<00:05>preview\n[00:08]future\nplain text');
+  engine.refreshCurrentSong(engine.getCurrentSong());
   await until(()=>d.querySelectorAll('.lyric-line').length===6,'readability fixture');
   engine.audioEl.currentTime=2;engine.audioEl.dispatchEvent(new w.Event('seeked'));
   const rendered=[...d.querySelectorAll('.lyric-line')];
@@ -184,7 +192,8 @@ try {
   check(rendered[2].classList.contains('current') && rendered[3].classList.contains('next'),'interlude keeps next effective lyric');
   engine.audioEl.currentTime=0;engine.audioEl.dispatchEvent(new w.Event('seeked'));
   check(rendered[1].classList.contains('next') && rendered.every(node=>!node.classList.contains('past')),'backward seek clears past and updates preview');
-  d.querySelector('.lyrics-lang-toggle [data-lang=fa]').click();await until(()=>d.querySelectorAll('.lyric-line').length===1,'plain rendering');
+  await db.Lyrics.save('browser-a','plain text / \u4e2d\u6587');engine.refreshCurrentSong(engine.getCurrentSong());
+  await until(()=>d.querySelectorAll('.lyric-line').length===1,'plain rendering');
   check(!d.querySelector('.lyric-line.current,.lyric-line.next,.lyric-line.past') && d.querySelector('.lyric-line.untimed'),'plain lyrics have no timed presentation states');
   check(!d.querySelector('#sheetCover,#sheetSpeedBtn,#sheetLyricsBtn,#lyricsModal,textarea'),'removed controls absent');
   for(const [width,height] of [[390,844],[844,390],[320,480],[1280,800],[1024,360]]) {
@@ -201,9 +210,13 @@ try {
   const restored=await frame.contentWindow.eval('import("/src/database/db.js")');
   const restoredEngine=await frame.contentWindow.eval('import("/src/services/audioEngine.js")');
   check(restoredEngine.audioEl.playbackRate===1 && await restored.Settings.get('playbackRate')===0.5,'startup ignores imported speed setting after reload');
-  check((await restored.Lyrics.get('browser-b')).en.includes('新歌词') && !!(await restored.Songs.get('browser-b')).instrumentalBlob,'resources persist across reload');
+  check((await restored.Lyrics.get('browser-b')).text.includes('新歌词') && !!(await restored.Songs.get('browser-b')).instrumentalBlob,'resources persist across reload');
   await until(()=>frame.contentWindow.navigator.serviceWorker.controller,'service worker control');
-  const cache=await caches.open('lumen-shell-v13');
+  const preservedA=(await restored.Lyrics.get('browser-a')).text;
+  const restoredTransfer=await frame.contentWindow.eval('import("/src/services/transferService.js")');
+  await restoredTransfer.importLibrary(new Blob([JSON.stringify({formatVersion:2,lyrics:[{songId:'browser-b',text:'JSON 中文 / English'}]})]));
+  check((await restored.Lyrics.get('browser-b')).text==='JSON 中文 / English' && (await restored.Lyrics.get('browser-a')).text===preservedA && (await restored.Songs.all()).length===2,'JSON import overwrites target lyrics without clearing other songs');
+  const cache=await caches.open('lumen-shell-v14');
   for(const path of ['src/services/lyricFile.js','src/components/songResources.js','src/components/playerLyrics.js','src/lyrics/lrc.mjs']) check(!!await cache.match(new URL('../'+path,location.href)),'cached '+path);
   await fetch('/__offline',{method:'POST'});
   frame.contentWindow.location.reload();await wait(200);

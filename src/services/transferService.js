@@ -36,12 +36,12 @@ export async function exportLibrary() {
   );
 
   const payload = {
-    formatVersion: 1,
+    formatVersion: 2,
     exportedAt: new Date().toISOString(),
     songs,
     playlists: raw.playlists,
     recents: raw.recents,
-    lyrics: raw.lyrics,
+    lyrics: raw.lyrics.filter(row => typeof row.text === "string").map(({ songId, text }) => ({ songId, text })),
     settings: raw.settings,
   };
 
@@ -75,7 +75,8 @@ export async function importLibrary(file) {
     songs,
     playlists: payload.playlists || [],
     recents: payload.recents || [],
-    lyrics: payload.lyrics || [],
+    lyrics: (payload.lyrics || []).filter(row => typeof row?.songId === "string" && typeof row.text === "string")
+      .map(({ songId, text }) => ({ songId, text })),
     settings: payload.settings || [],
   });
 
