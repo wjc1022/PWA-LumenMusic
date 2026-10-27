@@ -31,14 +31,27 @@ check(engine.audioEl.tagName==='VIDEO'&&d.querySelectorAll('video,audio').length
 await until(()=>d.querySelector('.lyric-line'),'lyrics');engine.audioEl.pause();engine.seekTo(.4);await until(()=>!engine.audioEl.seeking,'seek');check(engine.audioEl.currentTime>0.5,'seek uses video currentTime');
 const track=d.querySelector('#sheetProgressTrack');track.setPointerCapture=()=>{};const rect=track.getBoundingClientRect();track.dispatchEvent(new w.PointerEvent('pointerdown',{clientX:rect.left+rect.width*.6,pointerId:1}));track.dispatchEvent(new w.PointerEvent('pointerup',{pointerId:1}));await until(()=>!engine.audioEl.seeking,'pointer seek');check(engine.audioEl.currentTime>1,'player progress pointer seeks video');
 frame.style.width='390px';frame.style.height='844px';await wait(150);check(w.getComputedStyle(d.querySelector('#lyricsBody')).display==='none','portrait hides entire video lyrics area');
+// Denied native APIs still produce a button-driven landscape surface.
+const request=d.querySelector('#playerSheetModal').requestFullscreen;
+d.querySelector('#playerSheetModal').requestFullscreen=()=>Promise.reject(new Error('denied'));
+d.querySelector('#sheetFullscreenBtn').click();await wait(120);
+check(d.querySelector('#playerSheetModal').classList.contains('rotated-video'),'portrait lock gets CSS landscape');
+const rotated=d.querySelector('.player-sheet').getBoundingClientRect();
+check(Math.abs(rotated.width-390)<2&&Math.abs(rotated.height-844)<2,'rotated sheet fills portrait viewport');
+const rotatedTrack=track.getBoundingClientRect();
+track.dispatchEvent(new w.PointerEvent('pointerdown',{bubbles:true,clientX:rotatedTrack.left,clientY:rotatedTrack.top+rotatedTrack.height*.7,pointerId:7,pointerType:'touch'}));
+track.dispatchEvent(new w.PointerEvent('pointerup',{pointerId:7}));
+check(Math.abs(engine.audioEl.currentTime/engine.audioEl.duration-.7)<.03,'rotated touch seek maps vertical screen coordinate');
+d.querySelector('#sheetFullscreenBtn').click();await wait(100);
+check(!d.querySelector('#playerSheetModal').classList.contains('rotated-video')&&!d.querySelector('#playerSheetModal').classList.contains('page-fill'),'button restores portrait');
+d.querySelector('#playerSheetModal').requestFullscreen=request;
 frame.style.width='1000px';frame.style.height='600px';await wait(150);
-await until(()=>d.querySelector('#playerSheetModal').classList.contains('page-fill'),'automatic landscape fill');
-check(d.querySelector('#playerSheetModal').classList.contains('page-fill'),'phone landscape automatically fills visible page');
+await wait(100);
+check(!d.querySelector('#playerSheetModal').classList.contains('page-fill'),'rotation does not trigger fullscreen');
 const sheet=d.querySelector('.player-sheet').getBoundingClientRect();check(Math.abs(sheet.width-d.documentElement.clientWidth)<2&&Math.abs(sheet.height-600)<2,'landscape player fills viewport dimensions '+JSON.stringify({width:sheet.width,height:sheet.height,viewport:w.innerWidth,client:d.documentElement.clientWidth}));
 const picture=d.querySelector('#videoHost').getBoundingClientRect(),transport=d.querySelector('.player-sheet-controls').getBoundingClientRect();
 check(picture.height>=580,'landscape picture retains viewport height');
 check(transport.top>=picture.top&&transport.bottom<=picture.bottom&&transport.right<=picture.right+2,'transport overlays picture instead of reserving a footer');
-d.querySelector('#sheetFullscreenBtn').click();
 // A denied container fullscreen request must offer explicitly labelled page fill.
 d.querySelector('#sheetFullscreenBtn').click();await until(()=>d.querySelector('#playerSheetModal').classList.contains('page-fill')||d.fullscreenElement,'fullscreen or fill');
 const vr=d.querySelector('#videoHost').getBoundingClientRect(),lr=d.querySelector('#lyricsBody').getBoundingClientRect();check(lr.width>0&&lr.left>=vr.right,'landscape lyrics beside video without overlap');
@@ -50,8 +63,10 @@ const pref=await w.eval('import("/src/services/playerPreferences.js")');
 function tap(node){node.dispatchEvent(new w.PointerEvent('pointerdown',{bubbles:true,pointerType:'touch',pointerId:4}));node.click();}
 const ratio=vr.width/(vr.width+lr.width);check(Math.abs(ratio-.75)<.015,'video/subtitles ratio is 75:25');
 check(Math.abs(d.querySelector('.player-sheet-controls').getBoundingClientRect().right-vr.right)<2,'shared control/sidebar boundary');
-check(more.hidden===false,'narrow video offers more');
+check(more.hidden===true,'all controls fit without more at 1000px');
+frame.style.width='568px';frame.style.height='320px';await wait(120);check(!more.hidden,'actual narrow container offers more');
 tap(more);check(!d.querySelector('#sheetMorePanel').hidden,'more opens access to low frequency actions');
+frame.style.width='1000px';frame.style.height='600px';await wait(120);
 tap(sub);await wait(100);check(w.getComputedStyle(d.querySelector('#lyricsBody')).display==='none'&&d.querySelector('#videoHost').getBoundingClientRect().width>vr.width,'subtitle off releases width');
 pref.setPlayerButtons({subtitles:false});check(sub.hidden&&modal.classList.contains('subtitles-off'),'hiding subtitle button preserves off state');
 pref.setPlayerButtons({});check(sub.getAttribute('aria-pressed')==='false','restoring button preserves subtitle state');
@@ -79,6 +94,7 @@ tap(d.querySelector('#sheetQueueBtn'));await wait(3150);check(!modal.classList.c
 track.dispatchEvent(new w.PointerEvent('pointerdown',{bubbles:true,clientX:rect.left+rect.width*.5,pointerId:1,pointerType:'touch'}));await wait(3150);check(!modal.classList.contains('controls-hidden'),'drag keeps controls visible');track.dispatchEvent(new w.PointerEvent('pointercancel',{pointerId:1}));
 track.focus();track.dispatchEvent(new w.KeyboardEvent('keydown',{bubbles:true,key:'ArrowRight'}));await wait(3150);check(!modal.classList.contains('controls-hidden'),'keyboard control focus keeps visible');
 d.querySelector('#playerSheetClose').focus();tap(d.querySelector('#videoHost'));await wait(3150);check(modal.classList.contains('controls-hidden'),'after interaction ends idle timer restarts');
+if(modal.classList.contains('page-fill')) tap(d.querySelector('#sheetFullscreenBtn'));
 frame.style.width='390px';frame.style.height='844px';await wait(120);check(!modal.classList.contains('controls-hidden')&&w.getComputedStyle(d.querySelector('#lyricsBody')).display==='none','rotation cleans hidden state and portrait hides subtitles');
 frame.style.width='568px';frame.style.height='320px';await wait(120);
 const row=d.querySelector('.player-sheet-controls'),rowRect=row.getBoundingClientRect();check([...row.children].filter(b=>!b.hidden).every(b=>{const r=b.getBoundingClientRect();return r.left>=rowRect.left-1&&r.right<=rowRect.right+1&&Math.abs(r.top-row.children[1].getBoundingClientRect().top)<2;}),'compact landscape single row does not overflow');

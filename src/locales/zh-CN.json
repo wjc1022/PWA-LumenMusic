@@ -113,9 +113,11 @@
     "noInstrumental": "原唱 · 暂无伴奏",
     "emptyQueue": "播放队列为空。",
     "queue": "播放队列",
-    "fullscreen": "全屏 / 页面铺满",
+    "fullscreen": "全屏",
     "mediaFailed": "音频加载失败",
-    "exitFill": "退出页面铺满",
+    "exitFullscreen": "退出全屏",
+    "showSubtitles": "显示字幕",
+    "hideSubtitles": "隐藏字幕",
     "video": "视频",
     "more": "更多"
   },
@@ -243,7 +245,7 @@
     "queue": "队列",
     "variant": "原唱／伴奏",
     "subtitles": "字幕",
-    "fullscreen": "全屏／页面铺满"
+    "fullscreen": "全屏"
   },
   "diagnostics": {
     "history": "历史操作时间线（所选条目）",

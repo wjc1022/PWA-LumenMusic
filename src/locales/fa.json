@@ -113,9 +113,11 @@
     "noInstrumental": "Vocals / No instrumental",
     "emptyQueue": "صف پخش تو خالی است.",
     "queue": "Playback queue",
-    "fullscreen": "تمام‌صفحه / پر کردن صفحه",
+    "fullscreen": "تمام‌صفحه",
     "mediaFailed": "پخش رسانه ممکن نیست؛ قالب یا خواندن فایل را بررسی کنید.",
-    "exitFill": "خروج از نمای صفحه",
+    "exitFullscreen": "خروج از تمام‌صفحه",
+    "showSubtitles": "نمایش زیرنویس",
+    "hideSubtitles": "پنهان کردن زیرنویس",
     "video": "ویدیو",
     "more": "بیشتر"
   },

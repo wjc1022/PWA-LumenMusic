@@ -646,8 +646,8 @@ main{ padding:6px 16px calc(var(--mini-h) + 34px); min-height:100vh; }
 [hidden]{display:none!important}
 .sheet-more-panel{padding:12px;display:flex;flex-wrap:wrap;gap:8px;background:var(--bg,#111);border-radius:12px}
 .sheet-more-panel button{min-height:44px;min-width:44px}
-@media(orientation:landscape){
- .has-video .player-sheet{
+
+ .landscape-video .player-sheet{
   --safe-left:max(12px,env(safe-area-inset-left));--safe-right:max(12px,env(safe-area-inset-right));
   --visual-gap:16px;--lyrics-fraction:.25;--lyrics-width:calc((100% - var(--safe-left) - var(--safe-right) - var(--visual-gap)) * var(--lyrics-fraction));
   --sidebar-space:calc(var(--lyrics-width) + var(--visual-gap));
@@ -656,7 +656,7 @@ main{ padding:6px 16px calc(var(--mini-h) + 34px); min-height:100vh; }
  .has-video.subtitles-off .player-sheet,.has-video .player-sheet:not(:has(.lyric-line)){--sidebar-space:0px}
  .has-video .player-visuals{direction:ltr}
  [dir="rtl"] .has-video #lyricsBody{direction:rtl}
- .has-video #lyricsBody{flex:0 0 calc((100% - var(--visual-gap)) * var(--lyrics-fraction));width:calc((100% - var(--visual-gap)) * var(--lyrics-fraction))}
+ .landscape-video #lyricsBody{display:block;flex:0 0 calc((100% - var(--visual-gap)) * var(--lyrics-fraction));width:calc((100% - var(--visual-gap)) * var(--lyrics-fraction))}
  .has-video.subtitles-off #lyricsBody,.has-video .player-visuals:not(:has(.lyric-line)) #lyricsBody{display:none}
  .landscape-video .player-sheet,
  .landscape-video.page-fill .player-sheet,.landscape-video:fullscreen .player-sheet{
@@ -688,4 +688,10 @@ main{ padding:6px 16px calc(var(--mini-h) + 34px); min-height:100vh; }
  .landscape-video.controls-hidden .player-sheet-time-row,
  .landscape-video.controls-hidden .player-sheet-meta,
  .landscape-video.controls-hidden .player-sheet::after{opacity:0;pointer-events:none}
+
+.landscape-video .player-sheet{inset:0;transform:none;width:100%;max-width:none;height:100%;border-radius:0}
+.rotated-video .player-sheet,.rotated-video.page-fill .player-sheet,.rotated-video:fullscreen .player-sheet{
+ inset:auto;left:50%;top:50%;width:100dvh;height:100dvw;max-width:none;
+ transform:translate(-50%,-50%) rotate(90deg);transform-origin:center;
 }
+.landscape-video .player-sheet-controls{gap:8px;overflow-x:auto}

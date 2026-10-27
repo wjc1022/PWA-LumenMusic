@@ -6,6 +6,7 @@ import { readFile } from 'node:fs/promises';
 async function setup(settings = { playbackRate: 1.75, repeatMode: 'all' }) {
   const timers = new Map(), urls = new Map(), records = new Map();
   let nextTimer = 0, nextUrl = 0;
+  let now = 0, watch;
   class CustomEvent extends Event { constructor(type, init) { super(type); this.detail = init.detail; } }
   class Audio extends EventTarget {
     paused = true; currentTime = 0; duration = 60; playbackRate = 1;
@@ -27,6 +28,8 @@ async function setup(settings = { playbackRate: 1.75, repeatMode: 'all' }) {
     removeAttribute(name) { if (name === 'src') this.src = ''; }
   }
   const context = vm.createContext({ Audio, EventTarget, CustomEvent, console,
+    Date: class extends Date { static now() { return now; } },
+    setInterval(callback) { watch = callback; },
     URL: { createObjectURL(blob) { const url = 'blob:'+(++nextUrl);urls.set(url,blob);return url; }, revokeObjectURL() {} },
     setTimeout(callback) { timers.set(++nextTimer,callback);return nextTimer; },
     clearTimeout(id) { timers.delete(id); },
@@ -46,9 +49,9 @@ async function setup(settings = { playbackRate: 1.75, repeatMode: 'all' }) {
   const a={id:'a',audioBlob:{name:'original'},instrumentalBlob:{name:'instrumental'}}, b={id:'b',audioBlob:{name:'B'}};
   records.set(a.id,a);records.set(b.id,b);
   await api.selectSong(a,[a,b]);
-  const clean=()=>{assert.equal(timers.size,0);assert.equal(audio.waits.get('loadedmetadata')?.size||0,1);assert.equal(audio.waits.get('error')?.size||0,0);assert.equal(audio.waits.get('pause')?.size,1);assert.equal(api.getVariantStatus().pending,false);};
+  const clean=()=>{assert.equal(timers.size,0);assert.equal(audio.waits.get('loadedmetadata')?.size||0,2);assert.equal(audio.waits.get('error')?.size||0,0);assert.equal(audio.waits.get('pause')?.size,2);assert.equal(api.getVariantStatus().pending,false);};
   const expire=()=>{assert.equal(timers.size,1);[...timers.values()][0]();};
-  return {api,audio,a,b,errors,states,timers,settings,clean,expire,source:()=>urls.get(audio.src)};
+  return {api,audio,a,b,errors,states,timers,settings,clean,expire,tick(ms){now+=ms;watch();},source:()=>urls.get(audio.src)};
 }
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
 
@@ -199,4 +202,24 @@ test('failure diagnostics retain exception stage and target without changing rol
  assert.ok(failure.time);assert.equal(failure.blob.exists,true);
  assert.ok(!JSON.stringify(failure).includes('blob:'));
  h.api.clearMediaFailure();assert.equal(h.api.getLastMediaFailure(),null);h.clean();
+});
+
+test('silent mid-video stall is recorded and explicit resume reloads at the same position',async()=>{
+ const h=await setup();const video={id:'video',mediaType:'video',audioBlob:{name:'video'}};
+ await h.api.selectSong(video,[video,h.b]);h.audio.currentTime=24;h.tick(1000);
+ h.tick(15000);assert.equal(h.audio.paused,true);
+ assert.equal(h.api.getLastMediaFailure().stage,'playback-stalled');
+ assert.equal(h.api.getLastMediaFailure().currentTime,24);
+ assert.deepEqual(h.errors,['player.mediaFailed']);assert.equal(h.audio.loads,0);
+ h.audio.plans.push('loadedmetadata');h.api.togglePlay();await flush();
+ assert.equal(h.audio.currentTime,24);assert.equal(h.audio.paused,false);
+ assert.equal(h.audio.loads,1);assert.equal(h.source(),video.audioBlob);h.clean();
+});
+
+test('advancing media and user pauses do not trigger a stall',async()=>{
+ const h=await setup();
+ for(let i=1;i<=20;i++){h.audio.currentTime=i;h.tick(1000);}
+ h.audio.pause();h.tick(60000);assert.deepEqual(h.errors,[]);
+ h.api.togglePlay();h.tick(14000);assert.deepEqual(h.errors,[]);
+ h.audio.currentTime=21;h.tick(1000);assert.deepEqual(h.errors,[]);
 });

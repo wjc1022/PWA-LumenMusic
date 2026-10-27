@@ -1,5 +1,5 @@
 ﻿import { Songs } from '../database/db.js';
-export const APP_CACHE = 'lumen-shell-v23';
+export const APP_CACHE = 'lumen-shell-v26';
 export const sanitize = value => String(value ?? '').replace(/blob:[^\s"<>]+|file:[^\s"<>]+|[A-Za-z]:[\\/][^\s"<>]+|\/(?:private|var|Users|home|Volumes|storage)\/[^\s"<>]+/g, '[redacted]').slice(0, 1000);
 export const exception = error => ({ name: sanitize(error?.name), message: sanitize(error?.message) });
 export function mediaState(media) {

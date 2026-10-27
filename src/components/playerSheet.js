@@ -11,7 +11,7 @@ import { getPlayerButtons } from '../services/playerPreferences.js';
 
 import { $, el, clearNode } from "../utils/dom.js";
 import { localizeTime } from "../utils/format.js";
-import { t, getLang } from "../services/i18nService.js";
+import { t, getLang, onLanguageChange } from "../services/i18nService.js";
 import { createSongRow } from "./songRow.js";
 import { initPlayerLyrics } from "./playerLyrics.js";
 import {
@@ -29,34 +29,39 @@ export function initPlayerSheet() {
   const videoHost = $("#videoHost");
   videoHost.appendChild(audioEl);
   const fullscreenBtn = $("#sheetFullscreenBtn");
-  const landscapePhone = window.matchMedia('(orientation: landscape) and (max-height: 600px)');
-  let automaticFill = false;
-  let fullscreenRevision = 0;
+  let expanded=false, nativeEntered=false, fullscreenRevision=0;
   function setPageFill(enabled) {
-    modal.classList.toggle("page-fill", enabled);
-    fullscreenBtn.textContent = t(enabled ? "player.exitFill" : "player.fullscreen");
-    fullscreenBtn.setAttribute("aria-pressed", String(enabled || !!document.fullscreenElement));
+    expanded=enabled;modal.classList.toggle('page-fill',enabled);
+    fullscreenBtn.dataset.i18n=enabled?'player.exitFullscreen':'player.fullscreen';
+    fullscreenBtn.textContent=t(fullscreenBtn.dataset.i18n);
+    fullscreenBtn.setAttribute('aria-pressed',String(enabled));
   }
   function fitLandscape() {
-    if (!modal.classList.contains('open') || getCurrentSong()?.mediaType !== 'video') {
-      if (automaticFill) { automaticFill=false; setPageFill(false); }
-      return;
-    }
-    if (landscapePhone.matches && !document.fullscreenElement) {
-      if (!modal.classList.contains("page-fill")) { automaticFill = true; setPageFill(true); }
-    } else if (automaticFill) { automaticFill = false; setPageFill(false); }
+    modal.classList.toggle('rotated-video',expanded && innerHeight>innerWidth);
+    layoutButtons();
   }
-  landscapePhone.addEventListener('change', fitLandscape);
-  fullscreenBtn.addEventListener("click", async () => {
-    const request = ++fullscreenRevision;
-    automaticFill = false;
-    if (document.fullscreenElement) { await document.exitFullscreen(); return; }
-    if (modal.classList.contains("page-fill")) { setPageFill(false); return; }
-    // Fill immediately, even if the platform exposes an API that rejects or stalls.
-    setPageFill(true);
-    try { if (!modal.requestFullscreen) throw Error(); await modal.requestFullscreen(); }
-    catch { if (request === fullscreenRevision && modal.classList.contains("open")) setPageFill(true); }
+  function unlock() {try {screen.orientation?.unlock();} catch {}}
+  function leaveExpanded() {
+    ++fullscreenRevision;nativeEntered=false;unlock();setPageFill(false);fitLandscape();
+    if(document.fullscreenElement===modal) void document.exitFullscreen().catch(()=>{});
+  }
+  fullscreenBtn.addEventListener('click',async()=>{
+    if(expanded) {leaveExpanded();return;}
+    const revision=++fullscreenRevision;setPageFill(true);fitLandscape();
+    try {
+      await modal.requestFullscreen();
+      if(revision!==fullscreenRevision) {
+        if(document.fullscreenElement===modal) await document.exitFullscreen();
+        return;
+      }
+      nativeEntered=true;
+    } catch { /* Preserve custom controls with page fill. */ }
+    if(revision!==fullscreenRevision) return;
+    try {await screen.orientation.lock('landscape');} catch { /* CSS rotation fallback */ }
+    if(revision!==fullscreenRevision) {unlock();return;}
+    fitLandscape();
   });
+  window.addEventListener('resize',fitLandscape);
   const backdrop = $("#playerSheetBackdrop");
   const closeBtn = $("#playerSheetClose");
   const titleEl = $("#sheetTitle");
@@ -93,14 +98,14 @@ export function initPlayerSheet() {
   let dragPointerId;
   const landscape = matchMedia('(orientation: landscape)');
   const controls = $('.player-sheet-controls'), secondary = $('.player-sheet-secondary-row');
-  const subtitlesBtn = el('button',{class:'sheet-pill-btn',id:'sheetSubtitlesBtn','data-i18n':'buttonLabels.subtitles'},t('buttonLabels.subtitles'));
+  const subtitlesBtn = el('button',{class:'sheet-pill-btn',id:'sheetSubtitlesBtn','data-i18n':'player.hideSubtitles'},t('player.hideSubtitles'));
   secondary.append(subtitlesBtn);
   const moreBtn = el('button',{class:'sheet-pill-btn',id:'sheetMoreBtn','data-i18n':'player.more','aria-expanded':'false','aria-controls':'sheetMorePanel'},t('player.more'));
   const morePanel = el('div',{class:'sheet-more-panel',id:'sheetMorePanel',hidden:true});
   controls.append(moreBtn);secondary.after(morePanel);
   const buttons={shuffle:shuffleBtn,repeat:repeatBtn,favorite:favBtn,queue:queueBtn,variant:variantBtn,subtitles:subtitlesBtn,fullscreen:fullscreenBtn};
   let subtitles=true, hideTimer, keyboardFocus=false;
-  function isLandscapeVideo() { return modal.classList.contains('open') && getCurrentSong()?.mediaType==='video' && landscape.matches; }
+  function isLandscapeVideo() { return modal.classList.contains('open') && getCurrentSong()?.mediaType==='video' && (landscape.matches || expanded); }
   function reveal() {
     clearTimeout(hideTimer);modal.classList.remove('controls-hidden');
     for(const node of [controls,secondary,progressTrack,morePanel]) node.inert=false;
@@ -117,15 +122,27 @@ export function initPlayerSheet() {
     $('#shuffleBtn').hidden=!prefs.shuffle;
     $('#miniFavBtn').hidden=!prefs.favorite;
     subtitlesBtn.setAttribute('aria-pressed',String(subtitles));
-    const narrow=wide && videoHost.getBoundingClientRect().width<760;
+    subtitlesBtn.dataset.i18n=subtitles?'player.hideSubtitles':'player.showSubtitles';
+    subtitlesBtn.textContent=t(subtitlesBtn.dataset.i18n);
+    const order=[shuffleBtn,prevBtn,playBtn,nextBtn,repeatBtn,favBtn,fullscreenBtn,variantBtn,queueBtn,subtitlesBtn];
     for(const [key,button] of Object.entries(buttons)) {
-      button.hidden=!prefs[key] || (key==='variant' && video) || (['subtitles','fullscreen'].includes(key) && !video) || (key==='subtitles' && !landscape.matches);
-      const low=!['shuffle','repeat'].includes(key);
-      const overflow=low || videoHost.getBoundingClientRect().width<360;
-      const parent=wide ? (narrow && overflow ? morePanel : controls) : (low ? secondary : controls);
-      if(button.parentElement!==parent) parent.append(button);
+      button.hidden=!prefs[key] || (key==='variant' && video) || (['subtitles','fullscreen'].includes(key) && !video) || (key==='subtitles' && !wide);
     }
-    moreBtn.hidden=!wide || !narrow || ![...morePanel.children].some(b=>!b.hidden);
+    moreBtn.hidden=true;
+    for(const button of order) (wide || [shuffleBtn,prevBtn,playBtn,nextBtn,repeatBtn].includes(button)?controls:secondary).append(button);
+    controls.append(moreBtn);
+    if(wide) {
+      const visible=order.filter(b=>!b.hidden),gap=parseFloat(getComputedStyle(controls).columnGap)||0;
+      const widths=new Map(visible.map(b=>[b,b.offsetWidth]));
+      const required=()=>{
+        const row=visible.filter(b=>b.parentElement===controls);
+        return row.reduce((n,b)=>n+widths.get(b),0)+(moreBtn.hidden?0:moreBtn.offsetWidth)+Math.max(0,row.length+(moreBtn.hidden?0:1)-1)*gap;
+      };
+      const candidates=visible.filter(b=>![prevBtn,playBtn,nextBtn].includes(b)).reverse();
+      while(required()>controls.clientWidth && candidates.length) {
+        moreBtn.hidden=false;morePanel.prepend(candidates.shift());
+      }
+    }
     if(moreBtn.hidden) {morePanel.hidden=true;moreBtn.setAttribute('aria-expanded','false');}
     if(queueBtn.hidden) queuePanel.hidden=true;
     if(document.activeElement?.hidden) closeBtn.focus();
@@ -135,7 +152,10 @@ export function initPlayerSheet() {
   moreBtn.addEventListener('click',()=>{morePanel.hidden=!morePanel.hidden;moreBtn.setAttribute('aria-expanded',String(!morePanel.hidden));reveal();});
   window.addEventListener('playerbuttonschange',layoutButtons);
   landscape.addEventListener('change',()=>{dismissMenus();layoutButtons();});
-  new ResizeObserver(layoutButtons).observe(videoHost);
+  const observer=new ResizeObserver(layoutButtons);
+  observer.observe(videoHost);observer.observe(controls);
+  document.fonts?.ready.then(layoutButtons);
+  onLanguageChange(()=>{setPageFill(expanded);layoutButtons();});
   modal.addEventListener('pointerdown',e=>{
     keyboardFocus=false;
     if(!e.target.closest('#sheetMorePanel,#sheetMoreBtn,.sheet-panel,#sheetQueueBtn')) dismissMenus();
@@ -148,7 +168,10 @@ export function initPlayerSheet() {
   modal.addEventListener('focusin',e=>{if(e.target.closest(focusSelector)) reveal();});
   modal.addEventListener('focusout',()=>queueMicrotask(()=>{keyboardFocus=keyboardFocus && !!document.activeElement?.closest(focusSelector);reveal();}));
   for(const event of ['play','pause','ended']) audioEl.addEventListener(event,reveal);
-  document.addEventListener('fullscreenchange',()=>{setPageFill(modal.classList.contains('page-fill'));reveal();});
+  document.addEventListener('fullscreenchange',()=>{
+    if(nativeEntered && document.fullscreenElement!==modal) leaveExpanded();else fitLandscape();
+    reveal();
+  });
 
 
   function open() {
@@ -170,11 +193,7 @@ export function initPlayerSheet() {
     endDrag({pointerId:dragPointerId});
     dismissMenus();keyboardFocus=false;clearTimeout(hideTimer);
     modal.classList.remove('controls-hidden');
-    fullscreenRevision++;
-    automaticFill = false;
-    if (document.fullscreenElement === modal) void document.exitFullscreen();
-    modal.classList.remove("page-fill");
-    fullscreenBtn.textContent = t("player.fullscreen");
+    leaveExpanded();
     lyrics.close();
     modal.classList.remove("open");
     modal.setAttribute("aria-hidden", "true");
@@ -186,6 +205,7 @@ export function initPlayerSheet() {
   function renderSong(song) {
     if (!song) return;
     const video = song.mediaType === "video";
+    if (!video && expanded) leaveExpanded();
     modal.classList.toggle("has-video", video);
     videoHost.hidden = !video;
     fullscreenBtn.hidden = !video;
@@ -286,7 +306,7 @@ export function initPlayerSheet() {
   // ---- seek (pointer drag, same pattern as the mini player) ----
   function ratioFromEvent(e) {
     const rect = progressTrack.getBoundingClientRect();
-    return Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    return Math.min(1, Math.max(0, modal.classList.contains('rotated-video') ? (e.clientY-rect.top)/rect.height : (e.clientX-rect.left)/rect.width));
   }
   progressTrack.addEventListener("pointerdown", (e) => {
     isDragging = true;

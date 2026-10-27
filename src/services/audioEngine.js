@@ -50,6 +50,12 @@ let pendingSeek = null;
 let activeSource = null;
 let selectionRevision = 0;
 let currentVariant = "vocals"; // "vocals" | "instrumental"
+let stalledSource = false;
+let progressTime = 0, progressAt = Date.now();
+function resetProgressWatch() {
+  progressTime = audioEl.currentTime;
+  progressAt = Date.now();
+}
 
 // Bounded best-effort diagnostics; never store source URLs or media contents.
 const FAILURE_KEY = 'lumen.lastMediaFailure';
@@ -68,6 +74,9 @@ function recordFailure(stage,error,source=activeSource) {
  exception:{name:safe(error?.name),message:safe(error?.message)},
  mediaError:{code:audioEl.error?.code??null,message:safe(audioEl.error?.message)},
  readyState:audioEl.readyState??null,networkState:audioEl.networkState??null,
+ currentTime:audioEl.currentTime,duration:Number.isFinite(audioEl.duration)?audioEl.duration:null,
+ paused:audioEl.paused,seeking:!!audioEl.seeking,
+ buffered:Array.from({length:Math.min(audioEl.buffered?.length||0,8)},(_,i)=>[audioEl.buffered.start(i),audioEl.buffered.end(i)]),
  blob:{exists:!!blob,size:typeof blob?.size==='number'?blob.size:null,mime:safe(blob?.type)}};
  try{localStorage.setItem(FAILURE_KEY,JSON.stringify(lastFailure));}catch{}
  }catch{}
@@ -178,6 +187,8 @@ function sourceFor(song, variant) {
 }
 
 function loadSongIntoElement(source) {
+  stalledSource = false;
+  resetProgressWatch();
   audioEl.pause();
   pendingSeek = null;
   sourceRevision++;
@@ -248,7 +259,15 @@ export function togglePlay() {
     if (queue.length) playSong(queue[0], queue);
     return;
   }
-  if (audioEl.paused) audioEl.play().catch(error => recordFailure("resume-play", error));
+  if (audioEl.paused && stalledSource) {
+    // Only an explicit user resume retries a stalled source. Reuse the bounded
+    // restore path so seeking, cancellation and track changes remain safe.
+    void switchVariant(currentVariant, true);
+  }
+  else if (audioEl.paused) audioEl.play().catch(error => {
+    recordFailure("resume-play", error);
+    emit("playbackerror", "player.mediaFailed");
+  });
   else audioEl.pause();
 }
 
@@ -314,7 +333,7 @@ export function getVariantStatus() {
 
 export async function switchVariant(variant, reload = false) {
   if (!currentSong) return { ok: false, reason: "no-song" };
-  if (currentSong.mediaType === "video") return { ok: false, reason: "unavailable" };
+  if (currentSong.mediaType === "video" && !(reload && variant === "vocals")) return { ok: false, reason: "unavailable" };
   if (variant === "instrumental" && !currentSong.instrumentalBlob) return { ok: false, reason: "unavailable" };
   const target = sourceFor(currentSong, variant);
   if (!pendingRestore && activeSource && variant === currentVariant && !reload
@@ -324,7 +343,7 @@ export async function switchVariant(variant, reload = false) {
   const operation = {
     songId: currentSong.id, targetVariant: variant, phase: "loading",
     baseline: previous?.baseline || { source: activeSource, variant: currentVariant, time: audioEl.currentTime },
-    wantsPlaying: previous ? previous.wantsPlaying : !audioEl.paused,
+    wantsPlaying: previous ? previous.wantsPlaying : (reload && stalledSource) || !audioEl.paused,
     time: previous ? previous.time : audioEl.currentTime,
     duration: previous?.duration || audioEl.duration,
     seekRatio: previous?.seekRatio ?? pendingSeek,
@@ -456,6 +475,25 @@ audioEl.onerror = () => recordFailure("media-event", null, pendingRestore?.diagn
 audioEl.addEventListener("loadedmetadata", () => {
   if (pendingSeek !== null) seekTo(pendingSeek);
 });
+
+// A resolved play() and readyState=4 do not prove that decoding is advancing.
+// Observe the media clock independently of timeupdate/error events. Paused,
+// hidden and source-restoration time must not count towards a stall.
+setInterval(() => {
+  if (!currentSong || !activeSource || pendingRestore || audioEl.paused || audioEl.ended
+      || (typeof document !== "undefined" && document.hidden)) {
+    resetProgressWatch();
+    return;
+  }
+  if (audioEl.currentTime !== progressTime) { resetProgressWatch(); return; }
+  if (Date.now() - progressAt < 15000) return;
+  recordFailure("playback-stalled", { name: "PlaybackStalled", message: "Media clock did not advance for 15 seconds" });
+  stalledSource = true;
+  audioEl.pause();
+  emit("playbackerror", "player.mediaFailed");
+}, 1000);
+for (const event of ["play", "pause", "seeking", "seeked", "loadedmetadata"])
+  audioEl.addEventListener(event, resetProgressWatch);
 
 audioEl.addEventListener("ratechange", () => { if (audioEl.playbackRate !== 1) audioEl.playbackRate = 1; });
 audioEl.addEventListener("play", () => emit("playstate", pendingRestore?.wantsPlaying ?? true));
