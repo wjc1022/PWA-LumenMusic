@@ -86,6 +86,12 @@ export function initPlayerSheet() {
   const queuePanel = $("#sheetQueuePanel");
   const errorToast = el("div", { class: "toast toast-error", role: "alert" });
   document.body.appendChild(errorToast);
+  const notice = el('div', { class: 'toast', role: 'status' });
+  document.body.appendChild(notice);
+  on('playbacknotice', key => {
+    notice.textContent = t(key); notice.classList.add('visible');
+    setTimeout(() => notice.classList.remove('visible'), 6000);
+  });
   let errorTimer;
   on("playbackerror", key => {
     clearTimeout(errorTimer);

@@ -39,9 +39,7 @@ Created by **Behnood Shafiei** — [github.com/Behnooddev](https://github.com/Be
 - **Phone Music page** — scans local device folders for audio on Android
   (File System Access API); shows your library on desktop; explains the
   platform limitation honestly on iOS instead of faking support.
-- **Reactive visualizer** — a smooth, glowing frequency visualizer built
-  directly on the Web Audio API (`AnalyserNode`), with eased animation so
-  it never looks jittery.
+- **Direct media playback** with foreground screen wake lock and pause on background.
 - **Bilingual, fully translated UI** — every string lives in
   `src/locales/en.json` / `src/locales/fa.json`. Persian mode flips the
   whole interface to RTL with a Persian-friendly font stack and Persian
@@ -182,7 +180,6 @@ src/
     coverService.js         → canvas-based placeholder cover generator
     importService.js        → turns picked files into stored song records
     audioEngine.js           → owns <audio>, queue, shuffle, play/favorite events
-    visualizerService.js      → smooth Web Audio API canvas visualizer
     i18nService.js             → loads locales, applies translations, RTL
     themeService.js             → dark / light / system theme
     sleepTimerService.js         → countdown that pauses playback
@@ -345,7 +342,6 @@ extension. Full field-by-field details and validation rules are in
   CSS grid/flexbox, RTL layout, `prefers-reduced-motion`
 - **Vanilla JavaScript (ES modules)** — no framework, no bundler
 - **IndexedDB** — songs, playlists, favorites, recents, lyrics, settings
-- **Web Audio API** — `AnalyserNode`-powered visualizer
 - **Service Worker + Cache API** — offline app shell
 - **Web App Manifest** — installable on iOS and desktop
 - **Hand-written ID3v2 parser** — no external tag-reading dependency

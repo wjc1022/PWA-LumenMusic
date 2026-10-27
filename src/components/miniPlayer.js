@@ -9,14 +9,12 @@
 import { $ } from "../utils/dom.js";
 import { localizeTime } from "../utils/format.js";
 import { getLang, t } from "../services/i18nService.js";
-import { createVisualizer } from "../services/visualizerService.js";
 import {
   audioEl, on, togglePlay, playNext, playPrev,
   toggleFavorite, seekTo, setShuffle, isShuffleOn, getCurrentSong,
 } from "../services/audioEngine.js";
 
 export function initMiniPlayer() {
-  const miniPlayer = $("#miniPlayer");
   const miniTitle = $("#miniTitle");
   const miniArtist = $("#miniArtist");
   const miniCover = $("#miniCover");
@@ -30,14 +28,6 @@ export function initMiniPlayer() {
   const progressFill = $("#miniProgressFill");
   const currentTimeEl = $("#miniCurrentTime");
   const remainingTimeEl = $("#miniRemainingTime");
-  const canvas = $("#waveform");
-
-  const visualizer = createVisualizer({ canvas, audioElement: audioEl });
-  visualizer.start();
-  visualizer.onIntensity((peak) => {
-    miniPlayer.classList.toggle("intense", peak > 0.4);
-  });
-
   function renderSong(song) {
     if (!song) return;
     miniTitle.textContent = song.title;
@@ -51,7 +41,6 @@ export function initMiniPlayer() {
 
   on("trackchange", (song) => {
     renderSong(song);
-    visualizer.resume();
     updateProgressUI(0, song?.duration || 0);
   });
 
@@ -81,9 +70,9 @@ export function initMiniPlayer() {
     if (current && current.id === song.id) renderSong(song);
   });
 
-  playBtn.addEventListener("click", () => { visualizer.resume(); togglePlay(); });
-  prevBtn.addEventListener("click", () => { visualizer.resume(); playPrev(); });
-  nextBtn.addEventListener("click", () => { visualizer.resume(); playNext(); });
+  playBtn.addEventListener("click", () => { togglePlay(); });
+  prevBtn.addEventListener("click", () => { playPrev(); });
+  nextBtn.addEventListener("click", () => { playNext(); });
 
   shuffleBtn.addEventListener("click", () => {
     const next = !isShuffleOn();

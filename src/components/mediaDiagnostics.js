@@ -2,7 +2,7 @@
 import { t } from '../services/i18nService.js';
 import { Songs } from '../database/db.js';
 import { timeline } from '../services/mediaTimeline.js';
-import { audioEl,getCurrentSong,getLastMediaFailure,clearMediaFailure } from '../services/audioEngine.js';
+import { audioEl,getCurrentSong,getLastMediaFailure,clearMediaFailure,getPlaybackDiagnostics } from '../services/audioEngine.js';
 import { inspectRecord,probeMetadata,mediaState,formatReport,copyReport,latestOnly,exception } from '../services/mediaDiagnostics.js';
 export function buildMediaDiagnostics() {
  const panel=el('details',{class:'panel glass media-diagnostics',id:'mediaDiagnostics'});
@@ -21,7 +21,7 @@ export function buildMediaDiagnostics() {
   const last=getLastMediaFailure();lastView.textContent=last?JSON.stringify({belongsToSelected:last.songId===select.value,...last},null,2):t('diagnostics.noFailure');
   const history=timeline(select.value);
   historyView.textContent=JSON.stringify(history,null,2);
-  report.value=formatReport({live,last,selectedId:select.value,load,history,environment});
+  report.value=formatReport({live,last,selectedId:select.value,load,history,environment:{...environment,playback:getPlaybackDiagnostics()}});
   if(JSON.stringify(live).includes('NotFoundError')) status.textContent=t('diagnostics.unreadable');
  };
  const invalidate=()=>{gate.next();controller?.abort();live=null;load=null;status.textContent='';update();};

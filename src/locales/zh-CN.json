@@ -92,11 +92,12 @@
     "description1": "Lumen 是一款离线优先的开源音乐播放器模板，以柔和的黄色光晕搭配深色界面，适用于 iPhone 和桌面设备。",
     "description2": "应用不附带音乐。导入歌曲后，会自动读取标题、歌手、专辑和封面。音乐库、歌单、收藏和设置均保存在本机。",
     "architectureTitle": "技术架构",
-    "architectureBody": "使用原生 HTML、CSS 和 JavaScript，无框架、无构建步骤、无后端。通过 IndexedDB 存储数据，Web Audio API 实现可视化，Service Worker 提供离线支持。",
+    "architectureBody": "使用原生 HTML、CSS 和 JavaScript，无框架、无构建步骤、无后端。通过 IndexedDB 存储数据，媒体元素直接输出声音，Service Worker 提供离线支持。",
     "source": "源代码",
     "license": "许可证"
   },
   "player": {
+    "wakeUnavailable": "暂时无法保持屏幕常亮，系统可能自动锁屏。可在下次点击播放时重试。",
     "variantSwitching": "正在切换…",
     "variantFailed": "音频切换失败，已恢复之前的音频。请重试或在音乐库更换文件。",
     "variantRestoreFailed": "音频切换失败，原音频也无法恢复，播放已停止。请重新选歌或在音乐库更换文件。",

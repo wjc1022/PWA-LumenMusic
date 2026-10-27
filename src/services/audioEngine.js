@@ -57,6 +57,87 @@ function resetProgressWatch() {
   progressAt = Date.now();
 }
 
+// Shared transport intent and lifecycle policy, independent of player UI.
+let wantsPlayback = false, loadingSelection = false, internalPause = false;
+let lifecycleRevision = 0, pageAway = false;
+let wakeSentinel = null, wakePending = null, wakeRevision = 0;
+let retrySystemRelease = false;
+let wakeStatus = 'idle', wakeError = '', wakeWarned = false;
+const foreground = () => !pageAway && !globalThis.document?.hidden;
+function wakeNotice() {
+  if (!wakeWarned) { wakeWarned = true; emit('playbacknotice', 'player.wakeUnavailable'); }
+}
+function releaseWake() {
+  ++wakeRevision;
+  retrySystemRelease = false;
+  const held = wakeSentinel; wakeSentinel = null; wakeStatus = 'idle';
+  if (held) Promise.resolve(held.release()).catch(() => {});
+}
+function requestWake() {
+  if (!wantsPlayback || !foreground() || wakeSentinel || wakePending) return;
+  if (!globalThis.navigator?.wakeLock?.request) { wakeStatus = 'unsupported'; wakeNotice(); return; }
+  const revision = wakeRevision;
+  wakeStatus = 'requesting';
+  wakePending = Promise.resolve().then(() => {
+    if (revision !== wakeRevision || !wantsPlayback || !foreground()) return null;
+    return navigator.wakeLock.request('screen');
+  }).then(lock => {
+    if (!lock) return;
+    if (revision !== wakeRevision || !wantsPlayback || !foreground())
+      return Promise.resolve(lock.release()).catch(() => {});
+    wakeSentinel = lock; wakeStatus = 'held'; wakeError = '';
+    lock.addEventListener('release', () => {
+      if (wakeSentinel !== lock) return;
+      wakeSentinel = null; wakeStatus = 'released';
+      if (foreground() && wantsPlayback) {
+        if (wakePending) retrySystemRelease = true;
+        else requestWake();
+      }
+    });
+    if (lock.released) { wakeSentinel = null; wakeStatus = 'released'; wakeNotice(); }
+  }).catch(error => {
+    if (revision !== wakeRevision || !wantsPlayback || !foreground()) return;
+    wakeStatus = 'failed'; wakeError = String(error?.name || 'Error').slice(0, 80); wakeNotice();
+  }).finally(() => {
+    wakePending = null;
+    const retry = retrySystemRelease || revision !== wakeRevision;
+    retrySystemRelease = false;
+    if (retry && wantsPlayback && foreground()) requestWake();
+  });
+}
+export function getPlaybackDiagnostics() {
+  return { output: 'media-element', foreground: foreground(), wantsPlayback,
+    media: { paused: audioEl.paused, ended: !!audioEl.ended, currentTime: audioEl.currentTime,
+      muted: audioEl.muted, volume: audioEl.volume, readyState: audioEl.readyState },
+    wakeLock: { supported: !!globalThis.navigator?.wakeLock?.request, status: wakeStatus,
+      held: !!wakeSentinel, pending: !!wakePending, error: wakeError } };
+}
+export function pausePlayback() {
+  wantsPlayback = false; loadingSelection = false; ++lifecycleRevision;
+  if (pendingRestore) pendingRestore.wantsPlaying = false;
+  releaseWake(); audioEl.pause(); emit('playstate', false);
+}
+function backgroundPlayback() { pageAway = true; pausePlayback(); }
+globalThis.document?.addEventListener('visibilitychange', () => {
+  if (document.hidden) backgroundPlayback(); else pageAway = false;
+});
+globalThis.addEventListener?.('pagehide', backgroundPlayback);
+globalThis.addEventListener?.('pageshow', () => { pageAway = !!globalThis.document?.hidden; });
+async function playMedia() {
+  if (!foreground()) return;
+  wantsPlayback = true;
+  const revision = lifecycleRevision;
+  const source = sourceRevision;
+  requestWake();
+  try {
+    await audioEl.play();
+    if (!foreground() || !wantsPlayback) audioEl.pause();
+  } catch (error) {
+    if (revision !== lifecycleRevision || source !== sourceRevision) return;
+    wantsPlayback = false; releaseWake(); throw error;
+  }
+}
+
 // Bounded best-effort diagnostics; never store source URLs or media contents.
 const FAILURE_KEY = 'lumen.lastMediaFailure';
 const safe = value => String(value ?? '').replace(/blob:[^\s]+|file:[^\s]+|[A-Za-z]:[\\/][^\s]+|\/(?:private|var|Users|home|Volumes|storage)\/[^\s]+/g, '[redacted]').slice(0, 600);
@@ -189,7 +270,9 @@ function sourceFor(song, variant) {
 function loadSongIntoElement(source) {
   stalledSource = false;
   resetProgressWatch();
+  internalPause = true;
   audioEl.pause();
+  internalPause = false;
   pendingSeek = null;
   sourceRevision++;
   cancelSourceWait?.();
@@ -211,14 +294,20 @@ export function selectSong(song, newQueue) {
 }
 
 export async function playSong(song, newQueue, selected = false) {
+  if (!foreground()) return;
+  const lifecycle = lifecycleRevision;
   const request = ++selectionRevision;
+  loadingSelection = true; wantsPlayback = true; requestWake();
   if (Songs.withMedia) {
     try { song = await Songs.withMedia(song.id); }
     catch {
-      if (request === selectionRevision) emit('playbackerror', 'player.mediaFailed');
+      if (request === selectionRevision) { pausePlayback(); emit('playbackerror', 'player.mediaFailed'); }
       return;
     }
-    if (request !== selectionRevision || !song) return;
+    if (request !== selectionRevision) return;
+    // A newer foreground play intent must not be interrupted by this old read.
+    if (lifecycle !== lifecycleRevision && wantsPlayback) return;
+    if (!song) { pausePlayback(); return; }
   }
   pendingRestore = null;
   if (newQueue) setQueue(newQueue);
@@ -232,6 +321,7 @@ export async function playSong(song, newQueue, selected = false) {
     recordFailure("select-source", error);
     audioEl.removeAttribute("src");
     emit("trackchange", currentSong);
+    pausePlayback();
     emit("playbackerror", "player.mediaFailed");
     return;
   }
@@ -239,25 +329,30 @@ export async function playSong(song, newQueue, selected = false) {
   emit("variantchange", currentVariant);
   if (selected) emit("songselected", currentSong);
   try {
-    await audioEl.play();
+    if (lifecycle === lifecycleRevision && foreground() && wantsPlayback) await playMedia();
   } catch (error) {
     recordFailure("select-play", error, sourceFor(song, "vocals"));
     if (request === selectionRevision) emit("playbackerror", "player.mediaFailed");
   }
 
   if (request !== selectionRevision) return;
+  loadingSelection = false;
   const updated = await Songs.incrementPlayCount(song.id);
   if (updated && request === selectionRevision && currentSong?.id === song.id) currentSong = {...currentSong,...updated};
   if (request === selectionRevision) await Recents.record(song.id);
 }
 
 export function togglePlay() {
+  if (!foreground()) return;
+  if (loadingSelection) { pausePlayback(); return; }
   if (pendingRestore) {
     // load() pauses the element internally; transport controls reflect the
     // user's intent instead of mistaking that internal pause for a user action.
     pendingRestore.wantsPlaying = !pendingRestore.wantsPlaying;
-    if (!pendingRestore.wantsPlaying) audioEl.pause();
-    else if (pendingRestore.phase === "ready") audioEl.play().catch(error => recordFailure("resume-play", error));
+    wantsPlayback = pendingRestore.wantsPlaying;
+    if (!pendingRestore.wantsPlaying) pausePlayback();
+    else requestWake();
+    if (pendingRestore.wantsPlaying && pendingRestore.phase === "ready") playMedia().catch(error => recordFailure("resume-play", error));
     emit("playstate", pendingRestore.wantsPlaying);
     return;
   }
@@ -270,11 +365,11 @@ export function togglePlay() {
     // restore path so seeking, cancellation and track changes remain safe.
     void switchVariant(currentVariant, true);
   }
-  else if (audioEl.paused) audioEl.play().catch(error => {
+  else if (audioEl.paused) playMedia().catch(error => {
     recordFailure("resume-play", error);
     emit("playbackerror", "player.mediaFailed");
   });
-  else audioEl.pause();
+  else pausePlayback();
 }
 
 function playSongDirect(song) {
@@ -328,7 +423,7 @@ function waitForPlayback(operation) {
     cancelSourceWait = cancelled;
     audioEl.addEventListener("error", failed);
     audioEl.addEventListener("pause", paused);
-    try { Promise.resolve(audioEl.play()).then(() => finish(null), failed); }
+    try { Promise.resolve(playMedia()).then(() => finish(null), failed); }
     catch (error) { failed(error); }
   });
 }
@@ -349,7 +444,7 @@ export async function switchVariant(variant, reload = false) {
   const operation = {
     songId: currentSong.id, targetVariant: variant, phase: "loading",
     baseline: previous?.baseline || { source: activeSource, variant: currentVariant, time: audioEl.currentTime },
-    wantsPlaying: previous ? previous.wantsPlaying : (reload && stalledSource) || !audioEl.paused,
+    wantsPlaying: foreground() && (previous ? previous.wantsPlaying : (reload && stalledSource) || !audioEl.paused),
     time: previous ? previous.time : audioEl.currentTime,
     duration: previous?.duration || audioEl.duration,
     seekRatio: previous?.seekRatio ?? pendingSeek,
@@ -371,6 +466,7 @@ export async function switchVariant(variant, reload = false) {
       const time = operation.seekRatio === null ? operation.time : operation.seekRatio * audioEl.duration;
       audioEl.currentTime = Number.isFinite(audioEl.duration) ? Math.min(time, audioEl.duration) : time;
       operation.phase = "ready";
+      if (!foreground()) operation.wantsPlaying = false;
       if (operation.wantsPlaying) {
         const failure = await waitForPlayback(operation);
         if (failure && ownsSource() && operation.wantsPlaying) return false;
@@ -415,7 +511,7 @@ export async function switchVariant(variant, reload = false) {
   pendingRestore = null;
   activeSource = null;
   currentVariant = baseline.variant;
-  audioEl.pause();
+  pausePlayback();
   audioEl.removeAttribute("src");
   try { audioEl.load(); } catch { /* report the terminal failure below */ }
   if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
@@ -495,22 +591,36 @@ setInterval(() => {
   if (Date.now() - progressAt < 15000) return;
   recordFailure("playback-stalled", { name: "PlaybackStalled", message: "Media clock did not advance for 15 seconds" });
   stalledSource = true;
-  audioEl.pause();
+  pausePlayback();
   emit("playbackerror", "player.mediaFailed");
 }, 1000);
 for (const event of ["play", "pause", "seeking", "seeked", "loadedmetadata"])
   audioEl.addEventListener(event, resetProgressWatch);
 
 audioEl.addEventListener("ratechange", () => { if (audioEl.playbackRate !== 1) audioEl.playbackRate = 1; });
-audioEl.addEventListener("play", () => emit("playstate", pendingRestore?.wantsPlaying ?? true));
-audioEl.addEventListener("pause", () => emit("playstate", pendingRestore?.wantsPlaying ?? false));
+audioEl.addEventListener("play", () => {
+  if (!foreground() || !wantsPlayback) { audioEl.pause(); return; }
+  emit("playstate", pendingRestore?.wantsPlaying ?? true);
+});
+audioEl.addEventListener("pause", () => {
+  if (!internalPause && pendingRestore?.phase === 'ready' && pendingRestore.wantsPlaying && audioEl.paused) {
+    pausePlayback();
+    return;
+  }
+  if (!internalPause && !pendingRestore && !loadingSelection && audioEl.paused && !audioEl.ended) {
+    wantsPlayback = false; releaseWake();
+  }
+  emit("playstate", pendingRestore?.wantsPlaying ?? false);
+});
 audioEl.addEventListener("ended", () => {
+  if (!foreground() || !wantsPlayback) { pausePlayback(); return; }
   if (repeatMode === "one") {
     audioEl.currentTime = 0;
-    audioEl.play().catch(error => recordFailure("resume-play", error));
+    playMedia().catch(error => recordFailure("resume-play", error));
     return;
   }
   if (repeatMode === "off" && position >= queue.length - 1) {
+    pausePlayback();
     // last song in the queue and not repeating — stop instead of
     // silently wrapping back to the first song.
     return;
@@ -520,6 +630,7 @@ audioEl.addEventListener("ended", () => {
 audioEl.addEventListener("timeupdate", () => emit("timeupdate", audioEl.currentTime, audioEl.duration));
 
 globalThis.addEventListener?.('lumen-data-reset', () => {
+  pausePlayback();
   selectionRevision++;
   cancelSourceWait?.();
   pendingRestore = null;

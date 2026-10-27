@@ -87,11 +87,11 @@ check(!d.querySelector('#sheetPrevBtn').hidden&&!d.querySelector('#sheetPlayBtn'
 d.querySelector('#resetPlayerButtons').click();check(pref.buttonKeys.every(k=>pref.getPlayerButtons()[k]),'restore default visibility');
 check(d.querySelector('#sheetVariantBtn').hidden,'default visibility cannot override video variant rule');
 engine.setShuffle(false);while(engine.getRepeatMode()!=='off')await engine.cycleRepeatMode();
-engine.audioEl.loop=true;engine.seekTo(0);await engine.audioEl.play();tap(d.querySelector('#videoHost'));
+engine.audioEl.loop=true;engine.seekTo(0);if(engine.audioEl.paused)engine.togglePlay();await until(()=>!engine.audioEl.paused,"service play");tap(d.querySelector('#videoHost'));
 await wait(3250);check(modal.classList.contains('controls-hidden')&&d.querySelector('.player-sheet-controls').inert,'idle playing hides controls and exits focus order');
 const playingBefore=!engine.audioEl.paused;tap(d.querySelector('#videoHost'));check(!modal.classList.contains('controls-hidden')&&!engine.audioEl.paused&&playingBefore,'tap wakes without toggling playback');
 engine.audioEl.pause();await wait(3150);check(!modal.classList.contains('controls-hidden'),'paused controls stay visible');
-await engine.audioEl.play();tap(more);await wait(3150);check(!modal.classList.contains('controls-hidden'),'open more keeps controls visible');tap(more);
+if(engine.audioEl.paused)engine.togglePlay();await until(()=>!engine.audioEl.paused,"service play");tap(more);await wait(3150);check(!modal.classList.contains('controls-hidden'),'open more keeps controls visible');tap(more);
 tap(d.querySelector('#sheetQueueBtn'));await wait(3150);check(!modal.classList.contains('controls-hidden'),'open queue keeps controls visible');tap(d.querySelector('#sheetQueueBtn'));
 track.dispatchEvent(new w.PointerEvent('pointerdown',{bubbles:true,clientX:rect.left+rect.width*.5,pointerId:1,pointerType:'touch'}));await wait(3150);check(!modal.classList.contains('controls-hidden'),'drag keeps controls visible');track.dispatchEvent(new w.PointerEvent('pointercancel',{pointerId:1}));
 track.focus();track.dispatchEvent(new w.KeyboardEvent('keydown',{bubbles:true,key:'ArrowRight'}));await wait(3150);check(!modal.classList.contains('controls-hidden'),'keyboard control focus keeps visible');

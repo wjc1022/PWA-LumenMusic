@@ -334,7 +334,6 @@ main{ padding:6px 16px calc(var(--mini-h) + 34px); min-height:100vh; }
 [data-theme="light"] .mini-player{
   background:linear-gradient(135deg, rgba(255,236,190,0.92), rgba(255,255,255,0.94));
 }
-.mini-player.intense{ box-shadow:0 12px 40px rgba(0,0,0,0.45), 0 0 46px rgba(255,209,70,0.24); }
 
 .mini-progress-track{ position:relative; height:5px; width:100%; background:rgba(255,255,255,0.08); cursor:pointer; touch-action:none; transition:height .15s var(--ease); }
 .mini-progress-track.dragging{ height:8px; }
@@ -362,8 +361,6 @@ main{ padding:6px 16px calc(var(--mini-h) + 34px); min-height:100vh; }
 .mini-title{ font-size:13.5px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:30vw; }
 .mini-artist{ font-size:11.5px; color:var(--text-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:30vw; }
 
-.waveform{ width:60px; height:30px; flex-shrink:0; opacity:.95; display:none; }
-@media (min-width:460px){ .waveform{ display:block; } }
 
 .mini-controls{ display:flex; align-items:center; gap:2px; flex-shrink:0; }
 .mini-btn{

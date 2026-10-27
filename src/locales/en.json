@@ -92,11 +92,12 @@
     "description1": "Lumen is an offline-first, open-source music player template — a soft yellow glow against a dark canvas, tuned for iPhone and desktop alike.",
     "description2": "It ships with zero bundled music. Import your own songs and Lumen reads their title, artist, album, and cover art automatically. Everything — your library, playlists, favorites, and settings — lives only on this device.",
     "architectureTitle": "Architecture",
-    "architectureBody": "Vanilla HTML, CSS and JavaScript. No frameworks, no build step, no backend. IndexedDB for storage, the Web Audio API for the visualizer, and a Service Worker for offline use.",
+    "architectureBody": "Vanilla HTML, CSS and JavaScript. No frameworks, no build step, no backend. IndexedDB for storage, a Service Worker for offline use.",
     "source": "Source code",
     "license": "License"
   },
   "player": {
+    "wakeUnavailable": "Screen stay-awake is unavailable. Your screen may lock automatically. Tap play again to retry.",
     "variantSwitching": "Switching…",
     "variantFailed": "Audio switch failed. Previous audio restored. Retry or replace the file in Library.",
     "variantRestoreFailed": "Audio switch failed and previous audio could not be restored. Playback stopped. Select the song again or replace the file in Library.",

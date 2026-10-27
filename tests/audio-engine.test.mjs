@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
 
-async function setup(settings = { playbackRate: 1.75, repeatMode: 'all' }) {
+async function setup(settings = { playbackRate: 1.75, repeatMode: 'all' }, options = {}) {
   const timers = new Map(), urls = new Map(), records = new Map();
   let nextTimer = 0, nextUrl = 0;
   let now = 0, watch;
@@ -27,7 +27,11 @@ async function setup(settings = { playbackRate: 1.75, repeatMode: 'all' }) {
     pause() { this.paused = true; this.dispatchEvent(new Event('pause')); }
     removeAttribute(name) { if (name === 'src') this.src = ''; }
   }
+  const doc = new EventTarget(); doc.hidden = false; doc.createElement = () => new Audio();
+  const lifecycle = new EventTarget();
+  const songs = {};
   const context = vm.createContext({ Audio, EventTarget, CustomEvent, console,
+    ...(options.browser ? { document: doc, navigator: options.navigator || {}, addEventListener: lifecycle.addEventListener.bind(lifecycle) } : {}),
     Date: class extends Date { static now() { return now; } },
     setInterval(callback) { watch = callback; },
     URL: { createObjectURL(blob) { const url = 'blob:'+(++nextUrl);urls.set(url,blob);return url; }, revokeObjectURL() {} },
@@ -35,23 +39,25 @@ async function setup(settings = { playbackRate: 1.75, repeatMode: 'all' }) {
     clearTimeout(id) { timers.delete(id); },
   });
   const db = new vm.SyntheticModule(['Songs','Settings','Recents'], function() {
-    this.setExport('Songs',{
+    Object.assign(songs,{
       incrementPlayCount: async id => ({...records.get(id)}),
       setFavorite: async(id,favorite) => ({...records.get(id),favorite}),
     });
+    this.setExport('Songs', songs);
     this.setExport('Settings',{get:async(key,fallback)=>settings[key]??fallback,set:async(key,value)=>{settings[key]=value;}});
     this.setExport('Recents',{record:async()=>{}});
   }, {context});
   const module = new vm.SourceTextModule(await readFile(new URL('../src/services/audioEngine.js',import.meta.url),'utf8'),{context});
   await module.link(()=>db);await module.evaluate();
-  const api=module.namespace, audio=api.audioEl, errors=[], states=[];
+  const api=module.namespace, audio=api.audioEl, errors=[], states=[], notices=[];
+  api.on('playbacknotice',key=>notices.push(key));
   api.on('playbackerror',key=>errors.push(key));api.on('playstate',value=>states.push(value));
   const a={id:'a',audioBlob:{name:'original'},instrumentalBlob:{name:'instrumental'}}, b={id:'b',audioBlob:{name:'B'}};
   records.set(a.id,a);records.set(b.id,b);
   await api.selectSong(a,[a,b]);
   const clean=()=>{assert.equal(timers.size,0);assert.equal(audio.waits.get('loadedmetadata')?.size||0,2);assert.equal(audio.waits.get('error')?.size||0,0);assert.equal(audio.waits.get('pause')?.size,2);assert.equal(api.getVariantStatus().pending,false);};
   const expire=()=>{assert.equal(timers.size,1);[...timers.values()][0]();};
-  return {api,audio,a,b,errors,states,timers,settings,clean,expire,tick(ms){now+=ms;watch();},source:()=>urls.get(audio.src)};
+  return {api,audio,a,b,errors,states,notices,timers,settings,clean,expire,doc,lifecycle,songs,tick(ms){now+=ms;watch();},source:()=>urls.get(audio.src)};
 }
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
 
@@ -222,4 +228,88 @@ test('advancing media and user pauses do not trigger a stall',async()=>{
  h.audio.pause();h.tick(60000);assert.deepEqual(h.errors,[]);
  h.api.togglePlay();h.tick(14000);assert.deepEqual(h.errors,[]);
  h.audio.currentTime=21;h.tick(1000);assert.deepEqual(h.errors,[]);
+});
+
+function wakeHarness() {
+  const requests = [];
+  const navigator = { wakeLock: { request(type) {
+    assert.equal(type, 'screen');
+    return new Promise((resolve, reject) => requests.push({resolve, reject}));
+  } } };
+  const lock = () => {
+    const sentinel = new EventTarget(); sentinel.released = false; sentinel.releases = 0;
+    sentinel.release = async () => {
+      sentinel.released = true; sentinel.releases++; sentinel.dispatchEvent(new Event('release'));
+    };
+    return sentinel;
+  };
+  return { navigator, requests, lock };
+}
+const hidden = (h, value) => { h.doc.hidden = value; h.doc.dispatchEvent(new Event('visibilitychange')); };
+test('wake lock spans song and variant transitions; pause and terminal end release', async () => {
+  const w = wakeHarness(), h = await setup(undefined, {browser:true,navigator:w.navigator});
+  await flush(); const first = w.lock(); w.requests[0].resolve(first); await flush();
+  assert.equal(h.api.getPlaybackDiagnostics().wakeLock.held, true);
+  h.audio.plans.push('loadedmetadata');await h.api.switchVariant('instrumental');
+  assert.equal(first.releases,0);assert.equal(w.requests.length,1);
+  await h.api.selectSong(h.b, [h.a,h.b]); await flush();
+  assert.equal(w.requests.length, 1); assert.equal(first.releases, 0);
+  await h.api.selectSong(h.a,[h.a,h.b]);h.audio.dispatchEvent(new Event('ended'));await flush();
+  assert.equal(h.api.getCurrentSong().id,'b');assert.equal(first.releases,0);assert.equal(w.requests.length,1);
+  h.audio.dispatchEvent(new Event('ended')); await flush();
+  assert.equal(first.releases, 1);
+  h.api.togglePlay(); await flush(); const second=w.lock(); w.requests[1].resolve(second); await flush();
+  h.api.pausePlayback(); assert.equal(second.releases,1);
+});
+for (const background of [false,true]) test('late wake grant is released after '+(background?'background':'pause'), async () => {
+  const w=wakeHarness(),h=await setup(undefined,{browser:true,navigator:w.navigator});await flush();
+  if(background) hidden(h,true); else h.api.pausePlayback();
+  const lock=w.lock();w.requests[0].resolve(lock);await flush();
+  assert.equal(lock.releases,1);assert.equal(h.api.getPlaybackDiagnostics().wakeLock.held,false);
+  hidden(h,false);await flush();assert.equal(h.audio.paused,true);assert.equal(w.requests.length,1);
+  h.api.togglePlay();await flush();assert.equal(w.requests.length,2);assert.equal(h.audio.paused,false);
+});
+test('obsolete request settling after a fresh play retries without retaining old lock',async()=>{
+  const w=wakeHarness(),h=await setup(undefined,{browser:true,navigator:w.navigator});await flush();
+  h.api.pausePlayback();h.api.togglePlay();const lock=w.lock();w.requests[0].resolve(lock);await flush();
+  assert.equal(lock.releases,1);assert.equal(w.requests.length,2);
+  const fresh=w.lock();w.requests[1].resolve(fresh);await flush();assert.equal(h.api.getPlaybackDiagnostics().wakeLock.held,true);
+});
+test('system release retries once; failed retry waits for explicit play and warns once',async()=>{
+  const w=wakeHarness(),h=await setup(undefined,{browser:true,navigator:w.navigator}),notices=[];
+  h.api.on('playbacknotice',key=>notices.push(key));await flush();
+  const lock=w.lock();w.requests[0].resolve(lock);await flush();await lock.release();await flush();
+  assert.equal(w.requests.length,2);w.requests[1].reject({name:'NotAllowedError'});await flush();
+  assert.equal(h.api.getPlaybackDiagnostics().wakeLock.status,'failed');assert.equal(notices.length,1);
+  await flush();assert.equal(w.requests.length,2);
+  h.api.pausePlayback();h.api.togglePlay();await flush();w.requests[2].reject(Error('denied'));await flush();
+  assert.equal(notices.length,1);h.api.pausePlayback();h.api.togglePlay();await flush();
+  w.requests[3].resolve(w.lock());await flush();assert.equal(h.api.getPlaybackDiagnostics().wakeLock.held,true);
+});
+test('unsupported wake lock remains playable and emits at most one notice',async()=>{
+  const h=await setup(undefined,{browser:true}),notices=[];h.api.on('playbacknotice',key=>notices.push(key));
+  h.api.pausePlayback();h.api.togglePlay();h.api.pausePlayback();h.api.togglePlay();await flush();
+  assert.equal(h.audio.paused,false);assert.equal(notices.length,0);assert.deepEqual(h.notices,['player.wakeUnavailable']); // initial selection already warned
+  assert.equal(h.api.getPlaybackDiagnostics().wakeLock.status,'unsupported');
+});
+test('background database load completion stays paused after return until explicit play',async()=>{
+  const h=await setup(undefined,{browser:true});let resolve;
+  h.songs.withMedia=()=>new Promise(done=>{resolve=done;});
+  const pending=h.api.selectSong(h.b,[h.a,h.b]);hidden(h,true);hidden(h,false);resolve(h.b);await pending;
+  assert.equal(h.api.getCurrentSong().id,'b');assert.equal(h.audio.paused,true);
+  h.api.togglePlay();await flush();assert.equal(h.audio.paused,false);
+});
+test('background metadata completion and rollback cannot resume playback',async()=>{
+  const h=await setup(undefined,{browser:true});const pending=h.api.switchVariant('instrumental');
+  hidden(h,true);hidden(h,false);h.audio.dispatchEvent(new Event('loadedmetadata'));await pending;
+  assert.equal(h.audio.paused,true);h.api.togglePlay();await flush();assert.equal(h.audio.paused,false);
+  const rollback=h.api.switchVariant('vocals');h.audio.dispatchEvent(new Event('error'));await flush();
+  hidden(h,true);hidden(h,false);h.audio.dispatchEvent(new Event('loadedmetadata'));await rollback;
+  assert.equal(h.audio.paused,true);
+});
+test('pagehide and a late play promise stay paused across pageshow',async()=>{
+  const h=await setup(undefined,{browser:true});h.api.pausePlayback();let resolve;
+  h.audio.play=()=>new Promise(done=>{resolve=()=>{h.audio.paused=false;h.audio.dispatchEvent(new Event('play'));done();};});
+  h.api.togglePlay();h.lifecycle.dispatchEvent(new Event('pagehide'));h.lifecycle.dispatchEvent(new Event('pageshow'));
+  resolve();await flush();assert.equal(h.audio.paused,true);assert.equal(h.api.getPlaybackDiagnostics().wantsPlayback,false);
 });

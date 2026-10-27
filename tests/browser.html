@@ -20,6 +20,9 @@ try {
   const engine = await w.eval('import("/src/services/audioEngine.js")');
   // Also silence direct/manual test-page use (outside the muted runner).
   engine.audioEl.muted = true;
+  check(!d.querySelector('#waveform'), 'frequency canvas removed');
+  check(!w.performance.getEntriesByType('resource').some(r=>r.name.includes('visualizerService')), 'no visualizer module loaded');
+  check(engine.getPlaybackDiagnostics().output==='media-element', 'direct media output diagnostic');
   function wav(seconds = 20, name = 'test.wav') {
     const bytes = new ArrayBuffer(44 + 8000*2*seconds), view = new DataView(bytes);
     const str = (offset, value) => [...value].forEach((c,i)=>view.setUint8(offset+i,c.charCodeAt(0)));
@@ -177,7 +180,7 @@ try {
   check(engine.audioEl.duration===11,'queued replacement is the actual loaded audio');
   check(engine.audioEl.paused && Math.abs(engine.audioEl.currentTime-5)<0.2,'switch preserves paused position');
   await until(()=>d.querySelector('.lyric-line.current')?.textContent==='更新','switch lyric sync');
-  await engine.audioEl.play();engine.audioEl.currentTime=3;
+  engine.togglePlay();await until(()=>!engine.audioEl.paused,"service resume");engine.audioEl.currentTime=3;
   await engine.switchVariant('vocals');
   check(!engine.audioEl.paused && Math.abs(engine.audioEl.currentTime-3)<0.5,'switch preserves playing position');
   const pendingSwitch=engine.switchVariant('instrumental');
@@ -284,7 +287,7 @@ try {
   engine.refreshCurrentSong(longSong);await until(()=>d.querySelectorAll('.lyric-line').length===12,'wrapped lyrics');
   const lyricBody=d.querySelector('#lyricsBody');
   function centered(){const n=d.querySelector('.lyric-line.current');const target=Math.max(0,Math.min(lyricBody.scrollHeight-lyricBody.clientHeight,n.offsetTop+n.offsetHeight/2-lyricBody.clientHeight/2));return Math.abs(lyricBody.scrollTop-target)<2;}
-  for(const ratio of [.7,.2,.55,.56,.3,.31]) {engine.seekTo(ratio);await until(()=>!media.seeking,'seek finished');await wait(60);check(d.querySelector('.lyric-line.current')===d.querySelectorAll('.lyric-line')[Math.floor(media.currentTime/4)],'highlight follows actual time '+ratio);check(centered(),'stable wrapped center '+ratio);}
+  for(const ratio of [.7,.2,.55,.56,.3,.31]) {engine.seekTo(ratio);await until(()=>!media.seeking,'seek finished');await wait(60);check(d.querySelector('.lyric-line.current')===d.querySelectorAll('.lyric-line')[Math.floor(media.currentTime/4)],'highlight follows actual time '+ratio);await until(centered,'wrapped center settled '+ratio);check(centered(),'stable wrapped center '+ratio);}
   lyricBody.scrollTo({top:0,behavior:'smooth'});drag([.7,.1,.65,.35,.36]);
   await until(()=>!media.seeking,'rapid drag done');await wait(600);
   check(Math.abs(media.currentTime-21.6)<.1 && centered(),'rapid drag interrupts smooth scroll and keeps final position');
@@ -316,7 +319,7 @@ try {
   const restoredTransfer=await frame.contentWindow.eval('import("/src/services/transferService.js")');
   await restoredTransfer.importLibrary(new Blob([JSON.stringify({formatVersion:3,songs:[{id:'browser-b',audioBlob:'data:audio/wav;base64,'+btoa(Array.from(new Uint8Array(await (await restored.Songs.withMedia('browser-b')).audioBlob.arrayBuffer()),byte=>String.fromCharCode(byte)).join(''))}],playlists:[],recents:[],settings:[],lyrics:[{songId:'browser-b',text:'JSON 中文 / English'}]})]));
   check((await restored.Lyrics.get('browser-b')).text==='JSON 中文 / English' && (await restored.Lyrics.get('browser-a')).text===preservedA && (await restored.Songs.all()).length===2,'JSON import overwrites target lyrics without clearing other songs');
-  const cache=await caches.open('lumen-shell-v33');
+  const cache=await caches.open('lumen-shell-v34');
   for(const path of ['src/services/mediaTimeline.js','src/services/mediaDiagnostics.js','src/components/mediaDiagnostics.js','src/services/playerPreferences.js','src/services/lyricFile.js','src/components/songResources.js','src/components/playerLyrics.js','src/lyrics/lrc.mjs']) check(!!await cache.match(new URL('../'+path,location.href)),'cached '+path);
   await fetch('/__offline',{method:'POST'});
   frame.contentWindow.location.reload();await wait(200);

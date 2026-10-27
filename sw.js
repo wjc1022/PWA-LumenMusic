@@ -6,7 +6,7 @@
    so there is no user media to precache here.
    ========================================================= */
 
-const CACHE_NAME = "lumen-shell-v33";
+const CACHE_NAME = "lumen-shell-v34";
 
 const APP_SHELL = [
   "./",
@@ -35,7 +35,6 @@ const APP_SHELL = [
   "./src/services/themeService.js",
   "./src/services/transferService.js",
   "./src/services/updateService.js",
-  "./src/services/visualizerService.js",
   "./src/pages/about.js",
   "./src/pages/favorites.js",
   "./src/pages/home.js",

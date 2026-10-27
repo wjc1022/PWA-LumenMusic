@@ -8,7 +8,7 @@ import { el, clearNode } from "../utils/dom.js";
 import { t, setLanguage, getLang } from "../services/i18nService.js";
 import { setTheme, getThemePreference } from "../services/themeService.js";
 import { startSleepTimer, cancelSleepTimer, isSleepTimerActive, onTick } from "../services/sleepTimerService.js";
-import { audioEl } from "../services/audioEngine.js";
+import { pausePlayback } from "../services/audioEngine.js";
 import { exportLibrary, importLibrary } from "../services/transferService.js";
 import { exportPackage, importPackage, LmpValidationError, ExportCancelledError } from "../services/lmpService.js";
 import * as lmpDialog from "../components/lmpDialog.js";
@@ -109,7 +109,7 @@ function buildSleepTimerPanel() {
   SLEEP_OPTIONS.forEach((minutes) => {
     const btn = el("button", { class: "seg" }, String(minutes));
     btn.addEventListener("click", () => {
-      startSleepTimer(minutes, () => audioEl.pause());
+      startSleepTimer(minutes, () => pausePlayback());
       Array.from(seg.children).forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
     });
