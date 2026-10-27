@@ -30,7 +30,9 @@ function emit(event, ...args) {
   bus.dispatchEvent(new CustomEvent(event, { detail: args }));
 }
 
-export const audioEl = new Audio();
+export const audioEl = typeof document === "undefined" ? new Audio() : document.createElement("video");
+audioEl.playsInline = true;
+audioEl.className = "player-video";
 audioEl.preload = "metadata";
 audioEl.defaultPlaybackRate = 1;
 audioEl.playbackRate = 1;
@@ -154,6 +156,7 @@ function sourceFor(song, variant) {
 }
 
 function loadSongIntoElement(source) {
+  audioEl.pause();
   pendingSeek = null;
   sourceRevision++;
   cancelSourceWait?.();
@@ -184,20 +187,25 @@ export async function playSong(song, newQueue, selected = false) {
   currentVariant = "vocals";
 
   activeSource = sourceFor(song, currentVariant);
-  loadSongIntoElement(activeSource);
+  try { loadSongIntoElement(activeSource); } catch {
+    audioEl.removeAttribute("src");
+    emit("trackchange", currentSong);
+    emit("playbackerror", "player.mediaFailed");
+    return;
+  }
   emit("trackchange", currentSong);
   emit("variantchange", currentVariant);
   if (selected) emit("songselected", currentSong);
   try {
     await audioEl.play();
   } catch {
-    /* iOS may require a user gesture; the calling click satisfies this */
+    if (request === selectionRevision) emit("playbackerror", "player.mediaFailed");
   }
 
   if (request !== selectionRevision) return;
   const updated = await Songs.incrementPlayCount(song.id);
   if (updated && request === selectionRevision && currentSong?.id === song.id) currentSong = updated;
-  await Recents.record(song.id);
+  if (request === selectionRevision) await Recents.record(song.id);
 }
 
 export function togglePlay() {
@@ -218,20 +226,8 @@ export function togglePlay() {
   else audioEl.pause();
 }
 
-async function playSongDirect(song) {
-  const request = ++selectionRevision;
-  pendingRestore = null;
-  currentSong = song;
-  currentVariant = "vocals";
-  activeSource = sourceFor(song, currentVariant);
-  loadSongIntoElement(activeSource);
-  emit("trackchange", currentSong);
-  emit("variantchange", currentVariant);
-  try { await audioEl.play(); } catch { /* ignore autoplay rejection */ }
-  if (request !== selectionRevision) return;
-  const updated = await Songs.incrementPlayCount(song.id);
-  if (updated && request === selectionRevision && currentSong?.id === song.id) currentSong = updated;
-  await Recents.record(song.id);
+function playSongDirect(song) {
+  return playSong(song);
 }
 
 /**
@@ -292,6 +288,7 @@ export function getVariantStatus() {
 
 export async function switchVariant(variant, reload = false) {
   if (!currentSong) return { ok: false, reason: "no-song" };
+  if (currentSong.mediaType === "video") return { ok: false, reason: "unavailable" };
   if (variant === "instrumental" && !currentSong.instrumentalBlob) return { ok: false, reason: "unavailable" };
   const target = sourceFor(currentSong, variant);
   if (!pendingRestore && activeSource && variant === currentVariant && !reload
@@ -378,7 +375,7 @@ export async function switchVariant(variant, reload = false) {
 }
 
 export function hasInstrumental(song = currentSong) {
-  return !!song?.instrumentalBlob;
+  return song?.mediaType !== "video" && !!song?.instrumentalBlob;
 }
 
 export function playNext() {

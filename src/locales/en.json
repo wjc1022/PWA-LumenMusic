@@ -76,7 +76,10 @@
     "resetLibrary": "Erase all data",
     "resetHint": "Permanently remove every song, playlist, and setting",
     "resetConfirm": "This will permanently delete your entire library from this device. This can't be undone. Continue?",
-    "resetButton": "Erase everything"
+    "resetButton": "Erase everything",
+    "playerButtons": "Player buttons",
+    "playerButtonsHint": "Hiding a button only changes its visibility. Playback modes and subtitle state are preserved. Media and orientation rules still apply.",
+    "resetPlayerButtons": "Restore default visibility"
   },
   "about": {
     "title": "About",
@@ -109,7 +112,12 @@
     "instrumental": "Instrumental",
     "noInstrumental": "Vocals / No instrumental",
     "emptyQueue": "Your queue is empty.",
-    "queue": "Playback queue"
+    "queue": "Playback queue",
+    "fullscreen": "Fullscreen / Fill page",
+    "mediaFailed": "Cannot play this media: unsupported encoding or unreadable file.",
+    "exitFill": "Exit page fill",
+    "video": "Video",
+    "more": "More"
   },
   "lyrics": {
     "title": "Lyrics",
@@ -122,17 +130,23 @@
     "loadError": "Could not load lyrics. Close and reopen this view."
   },
   "import": {
+    "videoTimeout": "Timed out reading video metadata. Download the file fully to this device and retry.",
+    "videoUnsupported": "The browser cannot read this video format. A selectable file is not necessarily supported.",
+    "videoReadFailed": "Could not read the video. Check that the local file is complete and readable.",
+    "storageFull": "Local storage is full. Free space and retry; existing media has been kept.",
+    "storageFailed": "Could not save to local storage. Check browser storage permissions and retry.",
+    "fileReadFailed": "Could not read the selected file.",
     "button": "Import songs",
     "chooseFiles": "Choose files",
-    "dragHint": "Drop audio and matching LRC files together to import lyrics automatically",
+    "dragHint": "Drop audio, video and matching LRC files. Media stays on this device.",
     "addedWithLyrics": "Added {{count}} songs with {{lyrics}} matching lyrics files",
     "lyricsWarning": "Songs added, but {{count}} lyrics files could not be matched uniquely or read. Add them from Lyrics.",
     "processing": "Reading metadata…",
     "addedOne": "Added \"{{title}}\"",
     "addedMany": "Added {{count}} songs",
-    "noneImportable": "No audio files were found in that selection.",
-    "noneImportableIOS": "None of those could be imported. On iPhone, make sure the song is fully downloaded from iCloud (not just showing a cloud icon) before selecting it.",
-    "allFailed": "Those files couldn't be read — they may be protected or corrupted.",
+    "noneImportable": "No audio or video files selected.",
+    "noneImportableIOS": "Choose downloaded local audio or video. Picker acceptance does not guarantee codec support.",
+    "allFailed": "Import failed: unsupported encoding, unreadable files or insufficient local storage.",
     "partialAdded": "Added {{added}} of {{total}} songs — the rest couldn't be read.",
     "iosTip": "On iPhone: choose \"On My iPhone\" or iCloud Drive, and make sure the song is downloaded first."
   },
@@ -221,5 +235,14 @@
     "desktopHint": "On desktop, Phone Music shows your imported library — there's no separate device storage to browse here.",
     "unsupportedTitle": "Not available on this browser",
     "unsupportedBody": "This browser (including iOS Safari) doesn't provide a way for web apps to browse your device's file system directly. Use Import songs instead to add tracks from your Files app or Photos-style pickers."
+  },
+  "buttonLabels": {
+    "shuffle": "Shuffle",
+    "repeat": "Repeat",
+    "favorite": "Favorite",
+    "queue": "Queue",
+    "variant": "Vocals / instrumental",
+    "subtitles": "Subtitles",
+    "fullscreen": "Fullscreen / Fill page"
   }
 }

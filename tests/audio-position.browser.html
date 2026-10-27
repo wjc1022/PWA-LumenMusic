@@ -10,7 +10,8 @@ try {
  await until(()=>frame.contentDocument.querySelector('#page-home .page-head'),'boot');
  const w=frame.contentWindow,d=w.document;
  const engine=await w.eval('import("/src/services/audioEngine.js")'),db=await w.eval('import("/src/database/db.js")');
- // Each second has a distinct audible tone. Decode output identifies its
+ // Each second has a distinct tone, measured upstream of a silent output gain.
+ // Decode output identifies its
  // absolute position independently of currentTime, progress UI and lyrics.
  const rate=16000,seconds=48,bytes=new ArrayBuffer(44+rate*seconds*2),v=new DataView(bytes);
  const str=(o,s)=>[...s].forEach((c,i)=>v.setUint8(o+i,c.charCodeAt(0)));
@@ -21,7 +22,10 @@ try {
  const song={id:'position-probe',title:'Position probe',artist:'Synthetic second markers',audioBlob:blob,instrumentalBlob:blob,duration:seconds};
  await db.Songs.add(song);
  const context=new w.AudioContext(),source=context.createMediaElementSource(engine.audioEl),analyser=context.createAnalyser();
- analyser.fftSize=4096;analyser.smoothingTimeConstant=0;source.connect(analyser);analyser.connect(context.destination);await context.resume();
+ // Keep the graph rendering for real PCM/FFT checks, but silence the final sink.
+ // Muting the source here could erase the samples that these checks require.
+ const silentOutput=context.createGain();silentOutput.gain.value=0;
+ analyser.fftSize=4096;analyser.smoothingTimeConstant=0;source.connect(analyser);analyser.connect(silentOutput);silentOutput.connect(context.destination);await context.resume();
  const reference=referenceMode?await context.decodeAudioData(await blob.arrayBuffer()):null;
  const pcm=new Float32Array(analyser.fftSize);
  const audio=engine.audioEl;

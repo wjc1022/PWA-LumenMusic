@@ -19,7 +19,7 @@ src/lyrics/lrc.mjs 导出：
 - 无歌词只显示“暂无歌词”，无添加、更换或编辑入口。
 - 歌词独立滚动，保留当前行居中、高亮及逐字状态；普通文本静态显示。
 - 歌名、歌手、进度和控制共存，删除倍速界面。
-- 打开、播放、暂停、定位、元数据载入、切歌和音频版本切换均按 audioEl.currentTime 同步。
+- 打开、播放、暂停、定位、元数据载入、切歌和音频版本切换均按 audioEl.currentTime????????????? 同步。
 - requestAnimationFrame 仅在可见且播放时运行；收起、暂停、结束后停止，不累计独立时间。
 - 收起不停止音频；重新展开立即同步当前位置，不重复累积监听器。
 - 异步读取使用修订号或等效防护，防止旧歌曲或旧读取结果覆盖新状态；切歌和重新载入清理旧节点及索引。
@@ -48,3 +48,14 @@ JSON 对伴奏 Blob 的序列化问题独立存在，本轮仅调整歌词结构
 集成覆盖暂停定位、快速切歌、异步竞争、收起后停止循环、重新展开、歌词更换及音频版本切换。
 验证任意语言及双语混排、原始 LRC 的新 .lmp / JSON 往返、重复导入覆盖、界面语言不影响歌词、刷新持久化、真实 iPhone 选取及离线模块。
 命令及整体验收见 AGENTS.md 和 KTV_PLAN.md。旧 lyrics-modal 测试随新结构更新，不以维持已删除 DOM 为目标。
+
+## Video lyrics (2026-10-27)
+Video records use the same songId/raw-text lyrics contract. Portrait hides the entire lyrics region without changing stored text; landscape shows a separate sidebar, hidden when lyrics are absent. Audio retains its existing display. audioEl.currentTime remains the only clock. Request container fullscreen first, otherwise use explicitly labelled page fill. Native iPhone video fullscreen does not carry custom HTML sidebars. See KTV_PLAN.md for verification limits.
+
+## 横屏视频控制与按钮偏好（2026-10-27）
+- 横屏有字幕时按约 75:25 分配视频与字幕的净宽度；共享 `--lyrics-fraction`、间距及安全区域变量计算字幕、控件和渐变遮罩边界。RTL 界面仍将字幕放在视频右侧。
+- 字幕实际开关独立于按钮可见性，当前播放器会话内保留手动选择。关闭或无字幕时侧栏退出布局；竖屏强制隐藏视频字幕，纯音频歌词不受影响，不修改原始歌词文本。
+- 横屏视频控件覆盖画面，进度位于单行按钮上方；空间不足时低频操作进入“更多”，更窄时随机和循环也收纳。隐藏控件使用 inert 退出焦点顺序；关闭按钮始终可用，保留退出铺满的路径。
+- 播放中空闲约 3 秒隐藏控件、时间、标题及渐变。指针操作重新计时，唤出画面的操作不切换播放。暂停、拖动、队列／更多菜单、控制区键盘焦点阻止隐藏；切歌、收起和退出横屏清理拖动、菜单及计时状态。
+- 现有设置页提供七个按钮的独立显示偏好和恢复默认，使用 `lumen.playerButtons` 本地持久化并即时通知播放器；随机和收藏偏好同时应用于迷你条。默认全部显示，媒体和方向条件优先。显示设置不调用播放模式或字幕状态切换，也不改写媒体数据库。
+- 新模块加入 Service Worker v20 应用壳。设备及系统全屏的验收限制以计划最新章节为准。

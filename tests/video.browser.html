@@ -1,0 +1,107 @@
+﻿<!doctype html><meta charset="utf-8"><title>Local video checks</title>
+<pre id="result">RUNNING</pre><iframe src="../index.html" style="width:1000px;height:700px"></iframe>
+<script type="module">
+const frame=document.querySelector('iframe'),checks=[];const wait=ms=>new Promise(r=>setTimeout(r,ms));
+async function until(fn,label){for(let i=0;i<250;i++){if(await fn())return;await wait(30);}throw Error('Timeout '+label);}
+function check(ok,label){if(!ok)throw Error(label);checks.push(label);}
+try{
+await until(()=>frame.contentDocument.querySelector('#page-home .page-head'),'boot');
+let w=frame.contentWindow,d=w.document;
+const importer=await w.eval('import("/src/services/importService.js")');
+const db=await w.eval('import("/src/database/db.js")');
+const canvas=d.createElement('canvas');canvas.width=320;canvas.height=180;const ctx=canvas.getContext('2d');
+const stream=canvas.captureStream(20);const ac=new w.AudioContext();await ac.resume();const osc=ac.createOscillator(),dest=ac.createMediaStreamDestination();osc.connect(dest);osc.start();stream.addTrack(dest.stream.getAudioTracks()[0]);
+const recorder=new w.MediaRecorder(stream,{mimeType:'video/webm;codecs=vp8,opus'}),chunks=[];
+recorder.ondataavailable=e=>chunks.push(e.data);const stopped=new Promise(r=>recorder.onstop=r);recorder.start();
+const draw=setInterval(()=>{ctx.fillStyle='navy';ctx.fillRect(0,0,320,180);ctx.fillStyle='white';ctx.fillText('LOCAL VIDEO '+Date.now(),20,90);},40);
+await wait(2300);recorder.stop();await stopped;clearInterval(draw);stream.getTracks().forEach(t=>t.stop());osc.stop();await ac.close();
+const file=new w.File(chunks,'local-video.webm',{type:'video/webm'});
+let songs=await importer.importFiles([file]);check(songs.length===1&&songs[0].mediaType==='video','independent video import');
+check(!importer.isAudioFile(file),'video rejected as instrumental');
+const bad=await importer.importFiles([new w.File(['broken'],'broken.mp4',{type:'video/mp4'})]);check(bad.length===0,'undecodable video rejected before storage');
+const lyrics=await importer.importFiles([new w.File(chunks,'with-lyrics.webm',{type:'video/webm'}),new w.File(['[00:00]Video lyrics'],'with-lyrics.lrc')]);
+check((await db.Lyrics.get(lyrics[0].id)).text.includes('Video lyrics'),'video sidecar saved');
+frame.src='../index.html?video-reload';await new Promise(r=>frame.onload=r);await until(()=>frame.contentDocument.querySelector('#page-home .page-head'),'reload');
+w=frame.contentWindow;d=w.document;const db2=await w.eval('import("/src/database/db.js")'),engine=await w.eval('import("/src/services/audioEngine.js")');
+// The fixture contains an oscillator tone; never send its playback to speakers.
+engine.audioEl.muted=true;
+songs=await db2.Songs.all();check(songs.length===2&&songs.every(s=>s.audioBlob.size>0&&s.mediaType==='video'),'IndexedDB survives actual page reload');
+const video=songs.find(s=>s.title==='with-lyrics');await engine.selectSong(video,songs);await until(()=>engine.audioEl.readyState>=2&&!engine.audioEl.paused,'play');
+check(engine.audioEl.tagName==='VIDEO'&&d.querySelectorAll('video,audio').length===1,'one shared media element');
+await until(()=>d.querySelector('.lyric-line'),'lyrics');engine.audioEl.pause();engine.seekTo(.4);await until(()=>!engine.audioEl.seeking,'seek');check(engine.audioEl.currentTime>0.5,'seek uses video currentTime');
+const track=d.querySelector('#sheetProgressTrack');track.setPointerCapture=()=>{};const rect=track.getBoundingClientRect();track.dispatchEvent(new w.PointerEvent('pointerdown',{clientX:rect.left+rect.width*.6,pointerId:1}));track.dispatchEvent(new w.PointerEvent('pointerup',{pointerId:1}));await until(()=>!engine.audioEl.seeking,'pointer seek');check(engine.audioEl.currentTime>1,'player progress pointer seeks video');
+frame.style.width='390px';frame.style.height='844px';await wait(150);check(w.getComputedStyle(d.querySelector('#lyricsBody')).display==='none','portrait hides entire video lyrics area');
+frame.style.width='1000px';frame.style.height='600px';await wait(150);
+await until(()=>d.querySelector('#playerSheetModal').classList.contains('page-fill'),'automatic landscape fill');
+check(d.querySelector('#playerSheetModal').classList.contains('page-fill'),'phone landscape automatically fills visible page');
+const sheet=d.querySelector('.player-sheet').getBoundingClientRect();check(Math.abs(sheet.width-d.documentElement.clientWidth)<2&&Math.abs(sheet.height-600)<2,'landscape player fills viewport dimensions '+JSON.stringify({width:sheet.width,height:sheet.height,viewport:w.innerWidth,client:d.documentElement.clientWidth}));
+const picture=d.querySelector('#videoHost').getBoundingClientRect(),transport=d.querySelector('.player-sheet-controls').getBoundingClientRect();
+check(picture.height>=580,'landscape picture retains viewport height');
+check(transport.top>=picture.top&&transport.bottom<=picture.bottom&&transport.right<=picture.right+2,'transport overlays picture instead of reserving a footer');
+d.querySelector('#sheetFullscreenBtn').click();
+// A denied container fullscreen request must offer explicitly labelled page fill.
+d.querySelector('#sheetFullscreenBtn').click();await until(()=>d.querySelector('#playerSheetModal').classList.contains('page-fill')||d.fullscreenElement,'fullscreen or fill');
+const vr=d.querySelector('#videoHost').getBoundingClientRect(),lr=d.querySelector('#lyricsBody').getBoundingClientRect();check(lr.width>0&&lr.left>=vr.right,'landscape lyrics beside video without overlap');
+check(w.getComputedStyle(engine.audioEl).objectFit==='contain','original aspect ratio');
+
+// Controls contract: actual layout/media with synthetic pointer/keyboard events.
+const modal=d.querySelector('#playerSheetModal'),sub=d.querySelector('#sheetSubtitlesBtn'),more=d.querySelector('#sheetMoreBtn');
+const pref=await w.eval('import("/src/services/playerPreferences.js")');
+function tap(node){node.dispatchEvent(new w.PointerEvent('pointerdown',{bubbles:true,pointerType:'touch',pointerId:4}));node.click();}
+const ratio=vr.width/(vr.width+lr.width);check(Math.abs(ratio-.75)<.015,'video/subtitles ratio is 75:25');
+check(Math.abs(d.querySelector('.player-sheet-controls').getBoundingClientRect().right-vr.right)<2,'shared control/sidebar boundary');
+check(more.hidden===false,'narrow video offers more');
+tap(more);check(!d.querySelector('#sheetMorePanel').hidden,'more opens access to low frequency actions');
+tap(sub);await wait(100);check(w.getComputedStyle(d.querySelector('#lyricsBody')).display==='none'&&d.querySelector('#videoHost').getBoundingClientRect().width>vr.width,'subtitle off releases width');
+pref.setPlayerButtons({subtitles:false});check(sub.hidden&&modal.classList.contains('subtitles-off'),'hiding subtitle button preserves off state');
+pref.setPlayerButtons({});check(sub.getAttribute('aria-pressed')==='false','restoring button preserves subtitle state');
+tap(sub);await wait(100);check(w.getComputedStyle(d.querySelector('#lyricsBody')).display!=='none','subtitle on restores sidebar');
+const settings=await w.eval('import("/src/pages/settings.js")');
+await settings.renderSettings(d.querySelector('#page-settings'),{});
+const ids={shuffle:'Shuffle',repeat:'Repeat',favorite:'Fav',queue:'Queue',variant:'Variant',subtitles:'Subtitles',fullscreen:'Fullscreen'};
+engine.setShuffle(true);await engine.cycleRepeatMode();const mode=engine.getRepeatMode();
+for(const key of pref.buttonKeys){
+ const input=d.querySelector('[data-player-button="'+key+'"]');input.checked=false;input.dispatchEvent(new w.Event('change'));
+ check(d.querySelector('#sheet'+ids[key]+'Btn').hidden&&!pref.getPlayerButtons()[key],'setting immediately hides and saves '+key);
+}
+check(d.querySelector('#shuffleBtn').hidden&&d.querySelector('#miniFavBtn').hidden,'mini buttons share visibility preferences');
+check(engine.isShuffleOn()&&engine.getRepeatMode()===mode,'hidden shuffle/repeat keep active modes');
+check(!d.querySelector('#sheetPrevBtn').hidden&&!d.querySelector('#sheetPlayBtn').hidden&&!d.querySelector('#sheetNextBtn').hidden,'base transport retained');
+d.querySelector('#resetPlayerButtons').click();check(pref.buttonKeys.every(k=>pref.getPlayerButtons()[k]),'restore default visibility');
+check(d.querySelector('#sheetVariantBtn').hidden,'default visibility cannot override video variant rule');
+engine.setShuffle(false);while(engine.getRepeatMode()!=='off')await engine.cycleRepeatMode();
+engine.audioEl.loop=true;engine.seekTo(0);await engine.audioEl.play();tap(d.querySelector('#videoHost'));
+await wait(3250);check(modal.classList.contains('controls-hidden')&&d.querySelector('.player-sheet-controls').inert,'idle playing hides controls and exits focus order');
+const playingBefore=!engine.audioEl.paused;tap(d.querySelector('#videoHost'));check(!modal.classList.contains('controls-hidden')&&!engine.audioEl.paused&&playingBefore,'tap wakes without toggling playback');
+engine.audioEl.pause();await wait(3150);check(!modal.classList.contains('controls-hidden'),'paused controls stay visible');
+await engine.audioEl.play();tap(more);await wait(3150);check(!modal.classList.contains('controls-hidden'),'open more keeps controls visible');tap(more);
+tap(d.querySelector('#sheetQueueBtn'));await wait(3150);check(!modal.classList.contains('controls-hidden'),'open queue keeps controls visible');tap(d.querySelector('#sheetQueueBtn'));
+track.dispatchEvent(new w.PointerEvent('pointerdown',{bubbles:true,clientX:rect.left+rect.width*.5,pointerId:1,pointerType:'touch'}));await wait(3150);check(!modal.classList.contains('controls-hidden'),'drag keeps controls visible');track.dispatchEvent(new w.PointerEvent('pointercancel',{pointerId:1}));
+track.focus();track.dispatchEvent(new w.KeyboardEvent('keydown',{bubbles:true,key:'ArrowRight'}));await wait(3150);check(!modal.classList.contains('controls-hidden'),'keyboard control focus keeps visible');
+d.querySelector('#playerSheetClose').focus();tap(d.querySelector('#videoHost'));await wait(3150);check(modal.classList.contains('controls-hidden'),'after interaction ends idle timer restarts');
+frame.style.width='390px';frame.style.height='844px';await wait(120);check(!modal.classList.contains('controls-hidden')&&w.getComputedStyle(d.querySelector('#lyricsBody')).display==='none','rotation cleans hidden state and portrait hides subtitles');
+frame.style.width='568px';frame.style.height='320px';await wait(120);
+const row=d.querySelector('.player-sheet-controls'),rowRect=row.getBoundingClientRect();check([...row.children].filter(b=>!b.hidden).every(b=>{const r=b.getBoundingClientRect();return r.left>=rowRect.left-1&&r.right<=rowRect.right+1&&Math.abs(r.top-row.children[1].getBoundingClientRect().top)<2;}),'compact landscape single row does not overflow');
+frame.style.width='1280px';frame.style.height='800px';await wait(120);
+const desktopPicture=d.querySelector('#videoHost').getBoundingClientRect(),desktopRow=d.querySelector('.player-sheet-controls').getBoundingClientRect();
+check(desktopRow.right<=desktopPicture.right+2&&desktopRow.bottom<=desktopPicture.bottom,'desktop landscape overlay shares video boundary');
+const i18n=await w.eval('import("/src/services/i18nService.js")');await i18n.setLanguage('fa');
+check(d.querySelector('#lyricsBody').getBoundingClientRect().left>=d.querySelector('#videoHost').getBoundingClientRect().right,'RTL retains right subtitle sidebar');await i18n.setLanguage('en');
+tap(d.querySelector('#playerSheetClose'));await wait(3150);check(!modal.classList.contains('controls-hidden')&&!modal.classList.contains('landscape-video'),'close clears timer and landscape state');
+d.querySelector('#miniExpand').click();check(!d.querySelector('.player-sheet-controls').inert,'reopen restores control interaction');
+engine.audioEl.loop=false;engine.audioEl.pause();
+frame.style.width='1000px';frame.style.height='600px';await wait(100);
+const bare=songs.find(s=>s.title==='local-video');await engine.selectSong(bare,songs);await until(()=>!d.querySelector('.lyric-line'),'no lyrics');check(w.getComputedStyle(d.querySelector('#lyricsBody')).display==='none','no lyrics gives video available width');
+// The same engine plays audio through the same element.
+const bytes=new ArrayBuffer(16044),v=new DataView(bytes);const str=(o,t)=>[...t].forEach((c,i)=>v.setUint8(o+i,c.charCodeAt(0)));str(0,'RIFF');v.setUint32(4,16036,true);str(8,'WAVE');str(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,8000,true);v.setUint32(28,16000,true);v.setUint16(32,2,true);v.setUint16(34,16,true);str(36,'data');v.setUint32(40,16000,true);
+const audio={id:'audio-fixture',title:'Audio',audioBlob:new w.Blob([bytes],{type:'audio/wav'})};await db2.Songs.add(audio);
+const element=engine.audioEl;await engine.selectSong(audio,[audio,bare]);check(engine.audioEl===element&&d.querySelector('#videoHost').hidden,'audio switch uses same element');
+d.querySelector('#playerSheetClose').click();await until(()=>engine.getCurrentSong().id===bare.id,'auto advance');check(!d.querySelector('#playerSheetModal').classList.contains('open'),'actual ended event advances mixed queue without expanding');
+check(d.querySelector('#sheetVariantBtn').hidden,'video has no variant UI');
+const transfer=await w.eval('import("/src/services/transferService.js")');let backup;const create=w.URL.createObjectURL.bind(w.URL);w.URL.createObjectURL=b=>{if(b.type==='application/json')backup=b;return create(b);};await transfer.exportLibrary();await transfer.importLibrary(backup);check((await db2.Songs.get(bare.id)).mediaType==='video'&&(await db2.Songs.get(bare.id)).audioBlob.size===file.size,'JSON video backup restores type and bytes');
+engine.audioEl.pause();pref.setPlayerButtons({favorite:false,fullscreen:false});
+frame.src='../index.html?buttons-reload';await new Promise(r=>frame.onload=r);await until(()=>frame.contentDocument.querySelector('#page-home .page-head'),'button reload');
+const restored=await frame.contentWindow.eval('import("/src/services/playerPreferences.js")');check(!restored.getPlayerButtons().favorite&&!restored.getPlayerButtons().fullscreen,'button preferences survive actual reload');
+restored.setPlayerButtons({});const text='PASS '+checks.length+' video browser checks\n'+checks.join('\n');document.querySelector('#result').textContent=text;await fetch('/__result',{method:'POST',body:text});
+}catch(e){const text='FAIL '+e.stack+'\n'+checks.join('\n');document.querySelector('#result').textContent=text;await fetch('/__result',{method:'POST',body:text});}
+</script>

@@ -42,6 +42,8 @@ export function createSongResources(song, onUpdated) {
     });
     return el('div', { class: 'resource-picker' }, [button, input]);
   }
-  panel.append(picker(t('library.replaceLyrics'), 'lyrics'), picker(t('library.replaceInstrumental'), 'audio'), status);
+  panel.append(picker(t('library.replaceLyrics'), 'lyrics'));
+  if (song.mediaType !== 'video') panel.append(picker(t('library.replaceInstrumental'), 'audio'));
+  panel.append(status);
   return panel;
 }

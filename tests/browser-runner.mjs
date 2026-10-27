@@ -25,11 +25,14 @@ if(process.argv.includes('--serve')) {
   await new Promise(()=>{});
 }
 const referenceQuery=process.env.LUMEN_TEST_AUDIO_PATH?'?reference':'';
-const testPage=process.argv.includes('--stable-audio')?'audio-position.browser.html':'browser.html';
+const testPage=process.argv.includes('--video')?'video.browser.html':process.argv.includes('--stable-audio')?'audio-position.browser.html':'browser.html';
 const profile=await mkdtemp(join(tmpdir(),'lumen-browser-'));
 const chrome=process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
+const extraFlags=process.env.LUMEN_CHROME_FLAGS?.split(' ').filter(Boolean)||[];
 const motionFlags=process.argv.includes('--reduced-motion')?['--force-prefers-reduced-motion']:[];
-const child=spawn(chrome,['--headless=new','--disable-gpu','--no-first-run','--autoplay-policy=no-user-gesture-required',...motionFlags,'--user-data-dir='+profile,'--window-size=1280,900',`http://127.0.0.1:${server.address().port}/tests/${testPage}${referenceQuery}`]);
+// Mute the browser output, not playback/decoding or upstream analyser data.
+// Keep this after optional flags so every automation mode stays silent.
+const child=spawn(chrome,['--headless=new','--disable-gpu','--no-first-run','--autoplay-policy=no-user-gesture-required',...motionFlags,...extraFlags,'--mute-audio','--user-data-dir='+profile,'--window-size=1280,900',`http://127.0.0.1:${server.address().port}/tests/${testPage}${referenceQuery}`]);
 let output='',errors='';child.stdout.on('data',data=>output+=data);child.stderr.on('data',data=>errors+=data);
 const timeout=setTimeout(()=>finish('FAIL browser timed out\n'+errors),45000);
 child.on('error',error=>finish('FAIL '+error));

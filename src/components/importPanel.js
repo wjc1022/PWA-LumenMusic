@@ -8,7 +8,7 @@
  */
 
 import { $, el } from "../utils/dom.js";
-import { importFiles, isAudioFile } from "../services/importService.js";
+import { importFiles, isMediaFile } from "../services/importService.js";
 import { t } from "../services/i18nService.js";
 import { isIOS } from "../utils/platform.js";
 
@@ -33,7 +33,7 @@ export function initImportPanel({ onImported }) {
     if (!fileList || !fileList.length) return;
 
     const allFiles = Array.from(fileList);
-    const audioFiles = allFiles.filter(isAudioFile);
+    const audioFiles = allFiles.filter(isMediaFile);
 
     if (!audioFiles.length) {
       // Every selected item was filtered out. On iOS this is almost
@@ -48,16 +48,19 @@ export function initImportPanel({ onImported }) {
     showToast(t("import.processing"), true);
     let lyricsCount = 0;
     let lyricsWarnings = 0;
+    const failures = [];
     const imported = await importFiles(allFiles, (i, total) => {
       showToast(`${t("import.processing")} (${i}/${total})`, true);
     }, {
       onLyricsImported: () => lyricsCount++,
       onLyricsWarning: () => lyricsWarnings++,
+      onError: failure => failures.push(failure),
     });
     toast.classList.remove("visible");
 
     if (!imported.length) {
-      showToast(t("import.allFailed"), false, "error");
+      const failure = failures[0];
+      showToast(failure ? `${failure.fileName}: ${t(`import.${failure.code}`)}` : t("import.allFailed"), false, "error");
       return;
     }
     if (imported.length < audioFiles.length) {

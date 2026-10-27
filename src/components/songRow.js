@@ -44,7 +44,7 @@ export function createSongRow(song, {
 
   const meta = el("div", { class: "song-meta" }, [
     el("div", { class: "song-title" }, song.title),
-    el("div", { class: "song-artist" }, song.artist),
+    el("div", { class: "song-artist" }, song.mediaType === "video" ? `${t("player.video")} ? ${song.artist || ""}` : song.artist),
   ]);
 
   const favBtn = el("button", {

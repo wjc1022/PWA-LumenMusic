@@ -1,3 +1,4 @@
+import { buttonKeys, getPlayerButtons, setPlayerButtons } from '../services/playerPreferences.js';
 /**
  * pages/settings.js
  */
@@ -30,6 +31,7 @@ export async function renderSettings(container, { onLanguageChanged, onDataReset
 
   container.appendChild(buildThemePanel());
   container.appendChild(buildLanguagePanel(onLanguageChanged));
+  container.appendChild(buildPlayerButtonsPanel());
   container.appendChild(buildSleepTimerPanel());
   container.appendChild(buildLmpPanel());
   container.appendChild(buildDataPanel(onDataReset));
@@ -240,4 +242,19 @@ function buildDataPanel(onDataReset) {
     ])
   );
   return panel;
+}
+
+function buildPlayerButtonsPanel() {
+ const panel=el('section',{class:'panel glass',id:'playerButtonsSettings'});
+ panel.append(el('h2',{class:'panel-title'},t('settings.playerButtons')),el('p',{class:'panel-hint'},t('settings.playerButtonsHint')));
+ const inputs=[];
+ for(const key of buttonKeys) {
+  const input=el('input',{type:'checkbox','data-player-button':key});
+  input.checked=getPlayerButtons()[key];
+  input.addEventListener('change',()=>setPlayerButtons({...getPlayerButtons(),[key]:input.checked}));
+  inputs.push(input);panel.append(el('label',{class:'panel-row'},[t('buttonLabels.'+key),input]));
+ }
+ const reset=el('button',{class:'btn ghost',id:'resetPlayerButtons'},t('settings.resetPlayerButtons'));
+ reset.addEventListener('click',()=>{setPlayerButtons({});inputs.forEach(i=>i.checked=true);});
+ panel.append(reset);return panel;
 }

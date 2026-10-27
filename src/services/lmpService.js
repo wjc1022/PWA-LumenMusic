@@ -45,6 +45,7 @@ export class LmpValidationError extends Error {
 ------------------------------------------------------------------ */
 
 function extensionFromMime(mime, kind) {
+  if (kind === "audio" && mime?.startsWith("video/")) return ({"video/mp4":"mp4","video/quicktime":"mov","video/webm":"webm","video/ogg":"ogv"})[mime] || "mp4";
   const map = kind === "audio"
     ? { "audio/mpeg": "mp3", "audio/mp3": "mp3", "audio/mp4": "m4a", "audio/x-m4a": "m4a", "audio/wav": "wav", "audio/x-wav": "wav", "audio/ogg": "ogg", "audio/flac": "flac", "audio/aac": "aac" }
     : { "image/png": "png", "image/jpeg": "jpg", "image/jpg": "jpg", "image/webp": "webp" };
@@ -53,6 +54,7 @@ function extensionFromMime(mime, kind) {
 
 function guessMimeFromExtension(ext) {
   const map = {
+    mp4:"video/mp4", m4v:"video/x-m4v", mov:"video/quicktime", webm:"video/webm", ogv:"video/ogg",
     mp3: "audio/mpeg", m4a: "audio/mp4", wav: "audio/wav", ogg: "audio/ogg",
     flac: "audio/flac", aac: "audio/aac",
     png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp",
@@ -212,7 +214,7 @@ export async function importPackage(file, onProgress) {
 
     const audioBytes = entries.get(metadata.song);
     const ext = (metadata.song.split(".").pop() || "mp3").toLowerCase();
-    const mimeType = guessMimeFromExtension(ext);
+    const mimeType = metadata.mimeType || guessMimeFromExtension(ext);
     const audioBlob = new Blob([audioBytes], { type: mimeType });
 
     let cover;
@@ -245,7 +247,8 @@ export async function importPackage(file, onProgress) {
       duration: Number(metadata.duration) || 0,
       cover,
       audioBlob,
-      mimeType,
+      mediaType: metadata.mediaType === "video" || mimeType.startsWith("video/") ? "video" : "audio",
+      mimeType: metadata.mimeType || mimeType,
       ...(instrumentalBlob ? { instrumentalBlob, instrumentalMimeType } : {}),
       favorite: false,
       playCount: 0,
@@ -468,6 +471,8 @@ export async function exportPackage(options = {}, onProgress) {
 
     const metadata = {
       id: song.id,
+      mediaType: song.mediaType || "audio",
+      mimeType: song.mimeType,
       title: song.title,
       artist: song.artist,
       album: song.album || "",

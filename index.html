@@ -120,7 +120,7 @@
     <div class="player-sheet-handle" aria-hidden="true"></div>
     <button class="icon-btn player-sheet-close" data-i18n-aria="common.close" id="playerSheetClose" aria-label="Close player">✕</button>
 
-    <div class="lyrics-body" id="lyricsBody"></div>
+    <div class="player-visuals"><div id="videoHost" hidden></div><div class="lyrics-body" id="lyricsBody"></div></div>
     <div class="player-sheet-meta">
       <div class="player-sheet-title" id="sheetTitle">Nothing playing</div>
       <div class="player-sheet-artist" id="sheetArtist">Pick a song to start</div>
@@ -157,6 +157,7 @@
 
     <div class="player-sheet-secondary-row">
       <button class="mini-btn" id="sheetFavBtn" aria-label="Add to favorites" aria-pressed="false">♡</button>
+      <button class="sheet-pill-btn" id="sheetFullscreenBtn" data-i18n="player.fullscreen">Fullscreen / Fill page</button>
       <button class="sheet-pill-btn" id="sheetVariantBtn" aria-label="Vocals or instrumental">Vocals</button>
 
       <button class="mini-btn" data-i18n-aria="player.queue" id="sheetQueueBtn" aria-label="Open queue">

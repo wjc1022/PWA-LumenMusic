@@ -4,14 +4,14 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { SourceTextModule, SyntheticModule, createContext } from 'node:vm';
 
-async function harness(originalLyrics) {
+async function harness(originalLyrics, media = {}) {
   const songs = [];
   const savedLyrics = new Map();
   let downloaded;
   const song = {
     id: 'song-test', title: 'Timing test', artist: 'Singer',
     mimeType: 'audio/mpeg', audioBlob: new Blob(['audio fixture']),
-    cover: 'data:image/png;base64,AQID',
+    cover: 'data:image/png;base64,AQID', ...media,
   };
   const db = {
     Songs: { get: async () => undefined, add: async value => songs.push(value) },
@@ -84,4 +84,10 @@ test('unsupported lyrics shapes are skipped without migrating or discarding audi
     const result=await h.service.importPackage(archive);
     assert.equal(result.songCount,1);assert.equal(result.warnings.length,1);assert.equal(h.savedLyrics.size,0);
   }
+});
+
+test('video package retains type, MIME and exact media bytes',async()=>{
+ const h=await harness({text:'[00:01]video'},{mediaType:'video',mimeType:'video/webm',audioBlob:new Blob(['video bytes'],{type:'video/webm'})});
+ await h.service.exportPackage();await h.service.importPackage(h.download());
+ assert.equal(h.songs[0].mediaType,'video');assert.equal(h.songs[0].mimeType,'video/webm');assert.equal(await h.songs[0].audioBlob.text(),'video bytes');
 });

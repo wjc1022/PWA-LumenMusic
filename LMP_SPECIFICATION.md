@@ -271,3 +271,7 @@ and older readers are not expected to read v2 lyrics.
   would be surprising. A future version could offer this as an explicit,
   opt-in "also apply these settings" checkbox during import.
 
+
+
+### Local video extension (2026-10-27)
+Version 2 metadata may contain mediaType (audio or video) and mimeType. The song path contains the original media bytes, including video with its own soundtrack; it is not an MV attachment. Missing mediaType remains audio unless an imported video extension identifies it. Export preserves MIME and media type; playback support still depends on the receiving browser's codecs. Lyrics keep the existing single raw text structure. No audio extraction or server upload is performed.

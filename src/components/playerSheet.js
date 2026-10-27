@@ -1,3 +1,4 @@
+import { getPlayerButtons } from '../services/playerPreferences.js';
 /**
  * components/playerSheet.js
  * ---------------------------------------------------------------
@@ -25,6 +26,37 @@ import {
 export function initPlayerSheet() {
   const lyrics = initPlayerLyrics();
   const modal = $("#playerSheetModal");
+  const videoHost = $("#videoHost");
+  videoHost.appendChild(audioEl);
+  const fullscreenBtn = $("#sheetFullscreenBtn");
+  const landscapePhone = window.matchMedia('(orientation: landscape) and (max-height: 600px)');
+  let automaticFill = false;
+  let fullscreenRevision = 0;
+  function setPageFill(enabled) {
+    modal.classList.toggle("page-fill", enabled);
+    fullscreenBtn.textContent = t(enabled ? "player.exitFill" : "player.fullscreen");
+    fullscreenBtn.setAttribute("aria-pressed", String(enabled || !!document.fullscreenElement));
+  }
+  function fitLandscape() {
+    if (!modal.classList.contains('open') || getCurrentSong()?.mediaType !== 'video') {
+      if (automaticFill) { automaticFill=false; setPageFill(false); }
+      return;
+    }
+    if (landscapePhone.matches && !document.fullscreenElement) {
+      if (!modal.classList.contains("page-fill")) { automaticFill = true; setPageFill(true); }
+    } else if (automaticFill) { automaticFill = false; setPageFill(false); }
+  }
+  landscapePhone.addEventListener('change', fitLandscape);
+  fullscreenBtn.addEventListener("click", async () => {
+    const request = ++fullscreenRevision;
+    automaticFill = false;
+    if (document.fullscreenElement) { await document.exitFullscreen(); return; }
+    if (modal.classList.contains("page-fill")) { setPageFill(false); return; }
+    // Fill immediately, even if the platform exposes an API that rejects or stalls.
+    setPageFill(true);
+    try { if (!modal.requestFullscreen) throw Error(); await modal.requestFullscreen(); }
+    catch { if (request === fullscreenRevision && modal.classList.contains("open")) setPageFill(true); }
+  });
   const backdrop = $("#playerSheetBackdrop");
   const closeBtn = $("#playerSheetClose");
   const titleEl = $("#sheetTitle");
@@ -58,6 +90,66 @@ export function initPlayerSheet() {
   });
 
   let isDragging = false;
+  let dragPointerId;
+  const landscape = matchMedia('(orientation: landscape)');
+  const controls = $('.player-sheet-controls'), secondary = $('.player-sheet-secondary-row');
+  const subtitlesBtn = el('button',{class:'sheet-pill-btn',id:'sheetSubtitlesBtn','data-i18n':'buttonLabels.subtitles'},t('buttonLabels.subtitles'));
+  secondary.append(subtitlesBtn);
+  const moreBtn = el('button',{class:'sheet-pill-btn',id:'sheetMoreBtn','data-i18n':'player.more','aria-expanded':'false','aria-controls':'sheetMorePanel'},t('player.more'));
+  const morePanel = el('div',{class:'sheet-more-panel',id:'sheetMorePanel',hidden:true});
+  controls.append(moreBtn);secondary.after(morePanel);
+  const buttons={shuffle:shuffleBtn,repeat:repeatBtn,favorite:favBtn,queue:queueBtn,variant:variantBtn,subtitles:subtitlesBtn,fullscreen:fullscreenBtn};
+  let subtitles=true, hideTimer, keyboardFocus=false;
+  function isLandscapeVideo() { return modal.classList.contains('open') && getCurrentSong()?.mediaType==='video' && landscape.matches; }
+  function reveal() {
+    clearTimeout(hideTimer);modal.classList.remove('controls-hidden');
+    for(const node of [controls,secondary,progressTrack,morePanel]) node.inert=false;
+    if(!isLandscapeVideo() || audioEl.paused || isDragging || !queuePanel.hidden || !morePanel.hidden || keyboardFocus) return;
+    hideTimer=setTimeout(()=>{
+      modal.classList.add('controls-hidden');
+      for(const node of [controls,secondary,progressTrack,morePanel]) node.inert=true;
+    },3000);
+  }
+  function dismissMenus() { morePanel.hidden=true;moreBtn.setAttribute('aria-expanded','false');queuePanel.hidden=true; }
+  function layoutButtons() {
+    const video=getCurrentSong()?.mediaType==='video',prefs=getPlayerButtons(),wide=isLandscapeVideo();
+    modal.classList.toggle('landscape-video',wide);modal.classList.toggle('subtitles-off',!subtitles);
+    $('#shuffleBtn').hidden=!prefs.shuffle;
+    $('#miniFavBtn').hidden=!prefs.favorite;
+    subtitlesBtn.setAttribute('aria-pressed',String(subtitles));
+    const narrow=wide && videoHost.getBoundingClientRect().width<760;
+    for(const [key,button] of Object.entries(buttons)) {
+      button.hidden=!prefs[key] || (key==='variant' && video) || (['subtitles','fullscreen'].includes(key) && !video) || (key==='subtitles' && !landscape.matches);
+      const low=!['shuffle','repeat'].includes(key);
+      const overflow=low || videoHost.getBoundingClientRect().width<360;
+      const parent=wide ? (narrow && overflow ? morePanel : controls) : (low ? secondary : controls);
+      if(button.parentElement!==parent) parent.append(button);
+    }
+    moreBtn.hidden=!wide || !narrow || ![...morePanel.children].some(b=>!b.hidden);
+    if(moreBtn.hidden) {morePanel.hidden=true;moreBtn.setAttribute('aria-expanded','false');}
+    if(queueBtn.hidden) queuePanel.hidden=true;
+    if(document.activeElement?.hidden) closeBtn.focus();
+    reveal();
+  }
+  subtitlesBtn.addEventListener('click',()=>{subtitles=!subtitles;layoutButtons();});
+  moreBtn.addEventListener('click',()=>{morePanel.hidden=!morePanel.hidden;moreBtn.setAttribute('aria-expanded',String(!morePanel.hidden));reveal();});
+  window.addEventListener('playerbuttonschange',layoutButtons);
+  landscape.addEventListener('change',()=>{dismissMenus();layoutButtons();});
+  new ResizeObserver(layoutButtons).observe(videoHost);
+  modal.addEventListener('pointerdown',e=>{
+    keyboardFocus=false;
+    if(!e.target.closest('#sheetMorePanel,#sheetMoreBtn,.sheet-panel,#sheetQueueBtn')) dismissMenus();
+    reveal();
+  },true);
+  modal.addEventListener('pointermove',e=>{if(e.pointerType==='mouse')reveal();});
+  modal.addEventListener('keydown',()=>{keyboardFocus=true;reveal();});
+  const focusSelector='.player-sheet-controls,.player-sheet-secondary-row,.sheet-more-panel,#sheetProgressTrack,.sheet-panel';
+  document.addEventListener('keydown',e=>{if(e.key==='Tab') { keyboardFocus=true; if(isLandscapeVideo()) reveal(); }},true);
+  modal.addEventListener('focusin',e=>{if(e.target.closest(focusSelector)) reveal();});
+  modal.addEventListener('focusout',()=>queueMicrotask(()=>{keyboardFocus=keyboardFocus && !!document.activeElement?.closest(focusSelector);reveal();}));
+  for(const event of ['play','pause','ended']) audioEl.addEventListener(event,reveal);
+  document.addEventListener('fullscreenchange',()=>{setPageFill(modal.classList.contains('page-fill'));reveal();});
+
 
   function open() {
     if (!getCurrentSong()) return;
@@ -70,17 +162,33 @@ export function initPlayerSheet() {
     lyrics.open(getCurrentSong());
     updateProgressUI(audioEl.currentTime, audioEl.duration);
     closeBtn.focus();
+    fitLandscape();
+    layoutButtons();
   }
 
   function close() {
+    endDrag({pointerId:dragPointerId});
+    dismissMenus();keyboardFocus=false;clearTimeout(hideTimer);
+    modal.classList.remove('controls-hidden');
+    fullscreenRevision++;
+    automaticFill = false;
+    if (document.fullscreenElement === modal) void document.exitFullscreen();
+    modal.classList.remove("page-fill");
+    fullscreenBtn.textContent = t("player.fullscreen");
     lyrics.close();
     modal.classList.remove("open");
     modal.setAttribute("aria-hidden", "true");
     queuePanel.hidden = true;
+    layoutButtons();
+    $("#miniExpand").focus();
   }
 
   function renderSong(song) {
     if (!song) return;
+    const video = song.mediaType === "video";
+    modal.classList.toggle("has-video", video);
+    videoHost.hidden = !video;
+    fullscreenBtn.hidden = !video;
     titleEl.textContent = song.title;
     artistEl.textContent = song.artist;
     favBtn.classList.toggle("active", !!song.favorite);
@@ -88,6 +196,7 @@ export function initPlayerSheet() {
     favBtn.textContent = song.favorite ? "♥" : "♡";
     favBtn.setAttribute("aria-label", song.favorite ? t("player.unfavorite") : t("player.favorite"));
     renderVariantUI();
+    layoutButtons();
   }
 
   function updateProgressUI(currentTime, duration) {
@@ -114,6 +223,7 @@ export function initPlayerSheet() {
 
   function renderVariantUI() {
     const song = getCurrentSong();
+    variantBtn.hidden = song?.mediaType === "video" || !getPlayerButtons().variant;
     const available = hasInstrumental(song);
     const variant = getCurrentVariant();
     const { pending } = getVariantStatus();
@@ -132,7 +242,10 @@ export function initPlayerSheet() {
   closeBtn.addEventListener("click", close);
   backdrop.addEventListener("click", close);
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && modal.classList.contains("open")) close();
+    if (e.key === 'Escape' && modal.classList.contains('open')) {
+      if (!morePanel.hidden || !queuePanel.hidden) { dismissMenus(); (moreBtn.hidden ? queueBtn : moreBtn).focus(); reveal(); }
+      else close();
+    }
   });
 
   // ---- transport ----
@@ -146,7 +259,10 @@ export function initPlayerSheet() {
   on("trackchange", (song) => {
     clearTimeout(errorTimer);
     errorToast.classList.remove("visible");
+    endDrag({pointerId:dragPointerId});
+    dismissMenus();keyboardFocus=false;
     renderSong(song);
+    fitLandscape();reveal();
     updateProgressUI(audioEl.currentTime, audioEl.duration || song?.duration || 0);
     if (!queuePanel.hidden) renderQueuePanel();
   });
@@ -174,6 +290,8 @@ export function initPlayerSheet() {
   }
   progressTrack.addEventListener("pointerdown", (e) => {
     isDragging = true;
+    dragPointerId = e.pointerId;
+    reveal();
     progressTrack.classList.add("dragging");
     progressTrack.setPointerCapture(e.pointerId);
     const ratio = ratioFromEvent(e);
@@ -189,11 +307,14 @@ export function initPlayerSheet() {
   function endDrag(e) {
     if (!isDragging) return;
     isDragging = false;
+    reveal();
     progressTrack.classList.remove("dragging");
     try { progressTrack.releasePointerCapture(e.pointerId); } catch { /* already released */ }
+    dragPointerId = undefined;
   }
   progressTrack.addEventListener("pointerup", endDrag);
   progressTrack.addEventListener("pointercancel", endDrag);
+  progressTrack.addEventListener("lostpointercapture", endDrag);
 
   variantBtn.addEventListener("click", async () => {
     if (!hasInstrumental()) return;
@@ -205,6 +326,7 @@ export function initPlayerSheet() {
   queueBtn.addEventListener("click", () => {
     queuePanel.hidden = !queuePanel.hidden;
     if (!queuePanel.hidden) renderQueuePanel();
+    reveal();
   });
   function renderQueuePanel() {
     clearNode(queuePanel);

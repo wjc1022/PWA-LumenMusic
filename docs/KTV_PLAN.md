@@ -1,6 +1,6 @@
 ﻿# KTV 播放体验改造计划
 
-更新日期：2026-10-27。工作区已有一轮实现修改，以下状态以当前未提交工作区为准。
+更新日期：2026-10-27。以下状态以当前工作区为准。文末“横屏视频与按钮设置”是最新执行基准；历史测试记录不代表本轮重新验证。
 
 ## 当前实现状态
 
@@ -83,6 +83,12 @@ iPhone 已反馈歌词入口无法选取 .lrc，改为 .txt 后也未出现在�
 资源按浏览器及站点来源本地保存，不跨设备或不同地址自动共享。迁移伴奏优先验证 .lmp；旧 JSON 备份只显式序列化 audioBlob，不能宣称完整支持伴奏备份。
 历史测试结果不是本轮结论，未做真实设备或离线检查的项目明确标为未验证。
 
+## 未来增值服务（2026-10-27 记录）
+- [ ] 同步歌词生成：根据用户上传的歌曲提供句级同步歌词（LRC）；包含已有歌词文本的时间轴匹配，以及仅提供音频时的歌词生成与同步方向。
+- [ ] 去人声伴奏生成：根据用户上传的歌曲生成去人声版伴奏，供原唱／伴奏切换使用。
+
+以上仅记录未来服务方向，不纳入当前本地播放器改造范围；现阶段不展开技术方案、部署、定价或具体实现。
+
 ## 2026-10-27 定位回归修复
 - 复现：新增音频引擎测试在旧实现中得到 8 秒，期望 45 秒（切源时拖至 30 秒，回滚时再拖至 45 秒）；原因是恢复过程始终读取切换前的 baseline.time。
 - 切换操作单独维护最新目标时间；失败回滚和后续替代请求继承该目标，暂停/继续意图及源所有权检查保持有效。没有可用 duration 时保存最新比例，在元数据就绪后应用；新歌曲清除待定位操作。
@@ -101,3 +107,72 @@ iPhone 已反馈歌词入口无法选取 .lrc，改为 .txt 后也未出现在�
 - MP3 复跑方法（PowerShell）：先将 `$env:LUMEN_TEST_AUDIO_PATH` 设为测试 MP3 的完整路径，再运行上述 --stable-audio 命令；不设置该环境变量时运行 WAV 标记音测试。测试服务仅在明确设置此变量时提供 /__reference-audio，不复制或修改原音频。
 - 结论范围：本机 Chrome 中，同文件 WAV 和该 MP3 的修正场景均未复现。前一轮修复继续保留；本轮仅新增诊断回归及结果记录，没有据此追加推测性的运行时修复，Service Worker 仍为 v15。音频引擎 Node 回归 18 项重新执行通过。
 - 尚缺用户实际异常的原唱/伴奏文件对及设备信息，不能认定其时间轴不同或归因于解码。本测试验证浏览器播放图的真实解码输出，不是扬声器回录或人工听感验收，也不能排除其他浏览器/编码文件的定位问题。
+
+## Local video (2026-10-27; supersedes audio-only scope)
+- Independent mediaType audio/video records retain original files in audioBlob. Missing mediaType remains audio. Existing library data is preserved; no extraction, uploads, dependencies or build steps.
+- One playsinline video element, exported as audioEl, owns both audio and video playback. Existing queue, favorite, shuffle, repeat, selection/expansion and variant race protection remain; video has no instrumental variant.
+- Portrait hides the whole video lyrics region without deleting data. Landscape places lyrics beside the contained video; no lyrics gives video available width. Controls retain safe-area support and scrolling in short windows.
+- Request fullscreen on playerSheetModal; unsupported/denied requests use page fill, not system fullscreen. Native video-only fullscreen cannot carry the custom HTML lyrics sidebar. Real iPhone Safari/PWA container fullscreen remains unverified.
+- JSON and .lmp v2 preserve mediaType, MIME and original bytes. JSON also serializes instrumentalBlob. Old backups that already lost instrumental bytes cannot recover them. Large backups remain subject to browser memory/quota limits.
+- Earlier checks: 49 Node tests, 16 video Chrome checks, existing browser 103 normal/107 reduced-motion checks passed. One rapid-drag lyric-centering assertion failed once and passed on unchanged rerun; retained as a flaky observation.
+- Safari import follow-up: user reports failure after about 15 seconds. The first-frame gate could time out when Safari only preloads metadata. Import now accepts loadedmetadata, without forcing playback; metadata success does not guarantee codec support at playback. Separate read/timeout/unsupported/quota/storage messages expose actual failures. Cache is lumen-shell-v17; no new runtime modules.
+- Real iPhone file selection, touch, background playback, system container fullscreen, other codecs (H.264/HEVC/MOV) and real device upgrades still require verification. Desktop iframe tests are not iPhone acceptance. Chrome fullscreen testing exercised page fill due to missing user activation.
+- References: https://developer.apple.com/documentation/webkit/delivering-video-content-for-safari and https://bugs.webkit.org/show_bug.cgi?id=197608 . Platform documentation is not device verification.
+
+- Follow-up verification: 51 Node tests, 16 video Chrome checks and 103 existing Chrome checks passed, including v17 offline reload. Real-phone retry is still pending.
+
+- Landscape follow-up: expanded video automatically enters page fill on landscape viewports up to 600px high. Rotation back exits only the automatic fill. Manual fill remains explicit. Compact landscape spacing keeps more height for video and controls. This is page fill, not an orientation lock or a claim of iPhone system fullscreen. Cache v18. Real iPhone retry pending.
+
+- User landscape feedback: browser chrome plus a separate transport footer left too little video height. Phone landscape page fill now overlays title, progress and transport on the picture; lyrics remain an independent right sidebar. Safari address/tab bars cannot be hidden by CSS. Cache v19; real-device retry required.
+
+## 横屏视频与按钮设置（2026-10-27 最新执行基准）
+
+### 已完成（当前代码检查确认，设备验收另列）
+- [x] 本地视频独立导入媒体库并持久化，使用自身音轨，不作为歌曲附件、不提取音频。
+- [x] 音视频共用播放引擎，视频条目隐藏伴奏切换。
+- [x] 视频竖屏隐藏整个字幕区域；纯音频继续显示歌词。
+- [x] 横屏字幕位于视频右侧独立区域；无字幕时视频使用可用宽度。
+- [x] 提供播放器容器全屏及页面内铺满回退；手机横屏自动页面内铺满。
+- [x] 手机横屏铺满时播放控制覆盖于画面，已移除独立底部控制区对视频高度的占用。
+- [x] Safari 导入等待条件已从首帧调整为元数据就绪，并区分导入失败提示（代码修复完成，真实 iPhone 重试未验收）。
+
+### 本轮实施（已完成）
+- [x] 横屏有字幕时将当前约 64:36 调整为视频/字幕约 75:25。使用共享 CSS 属性统一字幕宽度、控制区及渐变遮罩边界，考虑间距与安全区域。
+- [x] 新增视频字幕开关；横屏关闭后字幕区域完全退出布局，视频使用可用宽度。竖屏仍强制隐藏视频字幕，不影响纯音频歌词或删除字幕数据。
+- [x] 横屏视频播放中约 3 秒无操作后，自动隐藏进度条、时间与控制按钮及其背景遮罩；轻触画面重新显示。用于唤出控件的点击不应意外触发播放切换。
+- [x] 暂停、进度拖动、菜单展开或键盘焦点位于控制区时保持显示；操作结束后重新计时。切歌、退出横屏、收起播放器时清理计时与状态。
+- [x] 横屏视频按钮合并为一行，进度条位于按钮行上方并一起自动隐藏；空间不足时将低频操作收进“更多”，不横向溢出。
+- [x] 在现有设置页新增“播放器按钮”设置，分别控制随机、循环、收藏、队列、原唱/伴奏、字幕、全屏按钮的显示；播放/暂停、上一首、下一首及进度条作为基础控制保留。
+- [x] 按钮显示偏好本地持久化，修改后即时生效，重载后恢复，并提供“恢复默认显示”。默认保留当前按钮显示习惯，新字幕按钮默认显示；媒体类型及方向的适用条件优先于显示偏好。
+- [x] 隐藏按钮只改变界面，不改变随机、循环等实际功能状态；设置页明确说明。字幕按钮可见性与字幕实际开关状态分开管理；手动关闭字幕后不得因按钮隐藏、布局重排或自动隐藏而重新开启。
+- [x] 所有隐藏按钮退出焦点顺序，剩余按钮自动排布；保证触摸尺寸、键盘操作与状态提示。全屏按钮隐藏后，系统退出全屏及页面内铺满退出路径仍可用。
+- [x] 更新三种语言文案、相关设计说明及 Service Worker 缓存版本；保留现有数据和未提交修改。
+
+### 本轮验收与未解决项
+- [x] 执行相关 Node 回归和浏览器检查，本轮实际结果见下方记录。
+- [x] 检查字幕开/关/缺失、75:25 边界、自动隐藏/唤出、暂停/拖动/菜单保持显示、单行布局及窄屏更多菜单。
+- [x] 检查每个按钮设置即时生效、持久化、恢复默认；隐藏随机/循环按钮不改变播放模式；不影响纯音频和竖屏行为。
+- [ ] 分别验证系统容器全屏和页面内铺满；真实 iPhone Safari/PWA 的文件导入、横屏触摸、全屏及安全区域仍需设备验收，不以桌面模拟替代。
+- [ ] 原唱/伴奏定位异常的用户实际文件对及设备复现仍未完成；既有 Chrome 同文件诊断未复现，不将其标为已解决。
+
+本节覆盖上文“控制区始终可达”等对横屏视频常驻控制的旧表述：横屏视频改为随时可唤出，纯音频保留原行为。历史完成项保留其验证范围，不把代码修复等同于真实设备问题已解决。
+
+### 本轮实际验证记录（2026-10-27）
+- 按 AGENTS.md 的完整相关 Node 命令执行，51 项通过、0 失败；包含播放引擎换源／定位／回滚、歌词解析／同步／竞争、歌词导入与备份往返。没有沿用历史数量。
+- `node tests/browser-runner.mjs --video`：隔离 Chrome headless 最终 55 项通过。使用实际录制 WebM、真实媒体解码、IndexedDB 重载及浏览器布局；新增覆盖 75:25 净宽度、控件与画面右边界、字幕开关与按钮偏好分离、七项设置即时隐藏和保存、迷你条同步、恢复默认、随机／循环状态保留、真实重载恢复显示偏好。
+- 同一视频检查覆盖约 3 秒自动隐藏、唤出不切换播放、暂停／拖动／更多／队列／键盘焦点保持显示、结束操作重新计时、旋转及收起清理、重新展开恢复交互、568×320 单行无溢出、桌面横屏覆盖布局和波斯语 RTL 右侧字幕。指针和键盘由测试派发，pointer capture 使用桩；不是操作系统触摸验收。
+- `node tests/browser-runner.mjs`：最终 104 项通过；`node tests/browser-runner.mjs --reduced-motion`：最终 108 项通过。覆盖原有选歌展开／收起、混合队列、歌词同步及定位、伴奏切换、资源保存、响应式，以及 `lumen-shell-v20`（含 playerPreferences.js）的缓存与服务器不可用时离线重载。
+- 页面内铺满已验证：自动横屏铺满、手动退出／再次进入及容器尺寸。headless 的全屏请求没有真实用户激活，走页面内铺满回退；**系统容器全屏成功进入及系统退出仍未验收**，上方对应项继续留空。隐藏全屏按钮后仍保留关闭播放器的退出路径。
+- 真实 iPhone Safari/PWA 文件导入、触摸、工具栏／安全区域、系统全屏、后台行为和旧缓存设备升级继续待验；桌面 iframe 尺寸调整不作为 iPhone 验收。用户实际原唱／伴奏文件对及设备上的定位异常继续未解决。
+- 保留已有未提交修改；无新增依赖、无构建步骤、未清空媒体或歌词数据。字幕手动开关在当前播放器会话内保留，按钮显示偏好跨重载保存；恢复默认显示不会改写字幕开关或播放模式。
+
+### 独立复核（2026-10-27）
+- 应用户要求重新检查实现并运行现有测试：相关 Node 51/51、视频 Chrome 55/55、普通 Chrome 104/104、减少动态 Chrome 108/108 全部通过；非引用上次执行结果。
+- 沙箱内 Chrome 因 GPU 子进程访问失败退出；获准在沙箱外使用独立临时配置运行相同浏览器测试后全部通过。未修改运行时代码或测试断言。
+- 覆盖比例与边界、字幕开关、自动隐藏与交互保持显示、单行与更多菜单、七项按钮设置及重载持久化、原有歌词/伴奏行为和 v20 离线缓存。git diff --check 通过，仅提示行尾转换。
+- 复核仍为现有自动化测试与代码检查，不含真实 iPhone 触摸、人工视觉验收或成功进入系统容器全屏；这些验收项继续保持未完成。
+
+### 自动化测试静音（2026-10-27）
+- 排查发现 runner 允许自动播放但未静音；video.browser.html 的 WebM 包含振荡器音轨并循环播放，audio-position.browser.html 的 WAV 生成 440–2320 Hz 标记音并曾直连输出，均可能发声。与用户实际高频声的关联尚未实机确认。
+- 所有 runner 浏览器模式增加 --mute-audio；普通和视频测试媒体元素静音，定位诊断在 analyser 后通过零增益节点连接输出，保留上游 PCM/FFT 与播放状态验证。未改动产品音视频功能，未删除测试或断言。
+- 按用户要求，本轮未执行播放测试；仅通过 runner 和三个浏览器测试页面脚本的语法检查及 diff 空白检查。修改后的浏览器运行结果尚未复验，之前通过数量不作为本次静音变更的验证结果。

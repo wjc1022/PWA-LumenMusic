@@ -15,9 +15,40 @@ import { generateId } from "../utils/id.js";
 const ACCEPTED_TYPE_PREFIX = "audio";
 
 export function isAudioFile(file) {
-  return !/\.lrc$/i.test(file.name) && (file.type.startsWith(ACCEPTED_TYPE_PREFIX) || /\.(mp3|m4a|wav|ogg|flac|aac|aif|aiff|caf)$/i.test(file.name));
+  return !isVideoFile(file) && !/\.lrc$/i.test(file.name) && (file.type.startsWith(ACCEPTED_TYPE_PREFIX) || /\.(mp3|m4a|wav|ogg|flac|aac|aif|aiff|caf)$/i.test(file.name));
 }
 
+export function isVideoFile(file) { return file.type?.startsWith("video/") || /\.(mp4|m4v|mov|webm|ogv|mkv|avi)$/i.test(file.name); }
+export function isMediaFile(file) { return isVideoFile(file) || isAudioFile(file); }
+// Safari may preload metadata without decoding a frame. Import must not
+// require autoplay; actual codec support is also checked when playback starts.
+export function readVideo(file) {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement("video");
+    const url = URL.createObjectURL(file);
+    let settled = false;
+    const finish = error => {
+      if (settled) return;
+      settled = true;
+      const duration = video.duration;
+      clearTimeout(timer);
+      video.onloadedmetadata = video.onloadeddata = video.onerror = null;
+      video.removeAttribute("src");
+      try { video.load(); } finally { URL.revokeObjectURL(url); }
+      if (error) reject(error);
+      else resolve({ title: file.name.replace(/\.[^/.]+$/, ""), artist: "", album: "", duration, cover: null });
+    };
+    const failure = code => Object.assign(new Error(code), { importCode: code });
+    const timer = setTimeout(() => finish(failure("videoTimeout")), 15000);
+    video.preload = "metadata";
+    video.muted = true;
+    video.playsInline = true;
+    video.onloadedmetadata = () => finish();
+    video.onloadeddata = () => finish();
+    video.onerror = () => finish(failure(video.error?.code === 4 ? "videoUnsupported" : "videoReadFailed"));
+    video.src = url;
+  });
+}
 // Include the relative folder when supplied, so duplicate names in separate
 // directories cannot accidentally acquire each other's lyrics.
 function pairingKey(file) {
@@ -45,6 +76,7 @@ export async function getExistingFingerprints() {
 export async function attachInstrumental(song, file) {
   if (!isAudioFile(file)) throw new Error("Invalid audio file");
   song = await Songs.get(song.id);
+  if (song?.mediaType === "video") throw new Error("Video has no instrumental variant");
   if (!song) throw new Error("Song no longer exists");
   const updated = {
     ...song,
@@ -65,7 +97,7 @@ async function withTimeout(promise, ms, fallback) {
 
 export async function importFiles(fileList, onProgress, options = {}) {
   const selected = Array.from(fileList);
-  const files = selected.filter(isAudioFile);
+  const files = selected.filter(isMediaFile);
   const lyricsFiles = new Map();
   for (const file of selected.filter(file => /\.lrc$/i.test(file.name))) {
     const key = pairingKey(file);
@@ -77,12 +109,13 @@ export async function importFiles(fileList, onProgress, options = {}) {
     const file = files[i];
     onProgress?.(i + 1, files.length, file.name);
 
+    let stage = "read";
     try {
       // extractMetadata has its own internal timeout for duration
       // reading, but this outer timeout is a second safety net: no
       // single problematic file (of any kind) should ever be able to
       // freeze the rest of a multi-file import.
-      const meta = await withTimeout(
+      const meta = isVideoFile(file) ? await readVideo(file) : await withTimeout(
         extractMetadata(file),
         10000,
         { title: file.name.replace(/\.[^/.]+$/, ""), artist: "Unknown Artist", album: "", genre: "", cover: null, duration: 0 }
@@ -99,8 +132,9 @@ export async function importFiles(fileList, onProgress, options = {}) {
         genre: meta.genre || "",
         duration: meta.duration,
         cover,
+        mediaType: isVideoFile(file) ? "video" : "audio",
         audioBlob: file,
-        mimeType: file.type || "audio/mpeg",
+        mimeType: file.type || (isVideoFile(file) ? ({webm:"video/webm",mov:"video/quicktime",ogv:"video/ogg"})[file.name.split(".").pop().toLowerCase()] || "video/mp4" : "audio/mpeg"),
         favorite: false,
         playCount: 0,
         dateAdded: Date.now(),
@@ -110,6 +144,7 @@ export async function importFiles(fileList, onProgress, options = {}) {
         sourceFingerprint: `${file.name}:${file.size}`,
       };
 
+      stage = "storage";
       await Songs.add(song);
       imported.push(song);
       const matches = lyricsFiles.get(pairingKey(file)) || [];
@@ -128,6 +163,9 @@ export async function importFiles(fileList, onProgress, options = {}) {
         }
       }
     } catch (err) {
+      const code = err.importCode || (stage === "storage"
+        ? (err.name === "QuotaExceededError" ? "storageFull" : "storageFailed") : "fileReadFailed");
+      options.onError?.({ fileName: file.name, code, errorName: err.name });
       // One unreadable file (e.g. a DRM-protected or corrupt track)
       // shouldn't abort the rest of the batch — skip it and continue.
       console.warn(`Skipped "${file.name}" — couldn't be imported:`, err);

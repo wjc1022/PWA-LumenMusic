@@ -179,3 +179,13 @@ test('unknown target duration and superseding switch preserve latest seek',async
  assert.equal((await first).reason,'superseded');assert.equal((await second).ok,true);
  assert.equal(h.audio.currentTime,30);h.clean();
 });
+
+test('video selection cancels old variant restore and shares transport with audio',async()=>{
+ const h=await setup();const pending=h.api.switchVariant('instrumental');
+ const video={id:'video',mediaType:'video',audioBlob:{name:'video'},instrumentalBlob:{name:'must not use'}};
+ await h.api.selectSong(video,[video,h.b]);
+ assert.equal((await pending).reason,'superseded');assert.equal(h.source().name,'video');assert.equal(h.api.hasInstrumental(video),false);
+ assert.equal((await h.api.switchVariant('instrumental')).reason,'unavailable');
+ h.api.seekTo(.5);assert.equal(h.audio.currentTime,30);h.api.togglePlay();assert.equal(h.audio.paused,true);
+ h.api.playNext();await flush();assert.equal(h.source().name,'B');h.clean();
+});

@@ -32,6 +32,7 @@ export async function exportLibrary() {
     raw.songs.map(async (song) => ({
       ...song,
       audioBlob: song.audioBlob ? await blobToDataUrl(song.audioBlob) : null,
+      instrumentalBlob: song.instrumentalBlob ? await blobToDataUrl(song.instrumentalBlob) : null,
     }))
   );
 
@@ -68,6 +69,7 @@ export async function importLibrary(file) {
     (payload.songs || []).map(async (song) => ({
       ...song,
       audioBlob: song.audioBlob ? await dataUrlToBlob(song.audioBlob) : null,
+      instrumentalBlob: typeof song.instrumentalBlob === "string" ? await dataUrlToBlob(song.instrumentalBlob) : null,
     }))
   );
 

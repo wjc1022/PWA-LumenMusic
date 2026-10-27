@@ -18,6 +18,8 @@ try {
   const w = frame.contentWindow, d = w.document;
   const db = await w.eval('import("/src/database/db.js")');
   const engine = await w.eval('import("/src/services/audioEngine.js")');
+  // Also silence direct/manual test-page use (outside the muted runner).
+  engine.audioEl.muted = true;
   function wav(seconds = 20, name = 'test.wav') {
     const bytes = new ArrayBuffer(44 + 8000*2*seconds), view = new DataView(bytes);
     const str = (offset, value) => [...value].forEach((c,i)=>view.setUint8(offset+i,c.charCodeAt(0)));
@@ -253,8 +255,8 @@ try {
   const restoredTransfer=await frame.contentWindow.eval('import("/src/services/transferService.js")');
   await restoredTransfer.importLibrary(new Blob([JSON.stringify({formatVersion:2,lyrics:[{songId:'browser-b',text:'JSON 中文 / English'}]})]));
   check((await restored.Lyrics.get('browser-b')).text==='JSON 中文 / English' && (await restored.Lyrics.get('browser-a')).text===preservedA && (await restored.Songs.all()).length===2,'JSON import overwrites target lyrics without clearing other songs');
-  const cache=await caches.open('lumen-shell-v15');
-  for(const path of ['src/services/lyricFile.js','src/components/songResources.js','src/components/playerLyrics.js','src/lyrics/lrc.mjs']) check(!!await cache.match(new URL('../'+path,location.href)),'cached '+path);
+  const cache=await caches.open('lumen-shell-v20');
+  for(const path of ['src/services/playerPreferences.js','src/services/lyricFile.js','src/components/songResources.js','src/components/playerLyrics.js','src/lyrics/lrc.mjs']) check(!!await cache.match(new URL('../'+path,location.href)),'cached '+path);
   await fetch('/__offline',{method:'POST'});
   frame.contentWindow.location.reload();await wait(200);
   await until(()=>frame.contentDocument.querySelector('#page-home .song-row'),'offline reload');
