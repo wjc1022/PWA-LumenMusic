@@ -204,6 +204,43 @@ try {
     if(width===1280)check(d.querySelector('.player-sheet').getBoundingClientRect().width>700,'desktop width expanded');
   }
   frame.style.width='100%';frame.style.height='100vh';
+
+  // Real media decoding with controlled loading windows, including rollback.
+  const longSong={...await db.Songs.get('browser-a'),audioBlob:wav(60),instrumentalBlob:wav(60)};
+  await db.Songs.update(longSong);await engine.selectSong(longSong);await until(()=>engine.audioEl.readyState>=1,'long audio');engine.audioEl.pause();
+  const media=engine.audioEl,nativeLoad=media.load.bind(media);
+  const track=d.querySelector('#sheetProgressTrack');
+  // Synthetic pointer delivery exercises app handlers; native pointer capture
+  // requires trusted OS input, so only capture is stubbed in this harness.
+  track.setPointerCapture=()=>{};track.releasePointerCapture=()=>{};
+  function drag(ratios){const r=track.getBoundingClientRect();ratios.forEach((ratio,i)=>track.dispatchEvent(new w.PointerEvent(i?'pointermove':'pointerdown',{pointerId:1,clientX:r.left+r.width*ratio})));track.dispatchEvent(new w.PointerEvent('pointerup',{pointerId:1}));}
+
+  for(const rollback of [false,true]) {
+    if(rollback) {await engine.switchVariant('vocals');engine.refreshCurrentSong({...longSong,instrumentalBlob:new w.Blob(['broken'])});}
+    media.currentTime=8;let loads=0;
+    const delayMetadata=event=>{if(event.isTrusted){event.stopImmediatePropagation();setTimeout(()=>media.dispatchEvent(new w.Event('loadedmetadata')),200);}};
+    media.addEventListener('loadedmetadata',delayMetadata,true);
+    media.load=()=>{loads++;nativeLoad();};
+
+    const switching=engine.switchVariant('instrumental',true);
+    drag([.1,.65,.5]);
+    if(rollback){await until(()=>loads===2,'rollback starts');drag([.2,.8,.7]);}
+    const outcome=await switching;media.load=nativeLoad;media.removeEventListener('loadedmetadata',delayMetadata,true);
+    check(rollback?outcome.restored:outcome.ok,'controlled switch completes '+rollback);
+    check(Math.abs(media.currentTime-(rollback?42:30))<.1,'latest seek preserved '+rollback);
+  }
+  await db.Lyrics.save('browser-a',Array.from({length:12},(_,i)=>'[00:'+String(i*4).padStart(2,'0')+']'+('?????? wrapping line '+i+' ').repeat(12)).join('\n'));
+  engine.refreshCurrentSong(longSong);await until(()=>d.querySelectorAll('.lyric-line').length===12,'wrapped lyrics');
+  const lyricBody=d.querySelector('#lyricsBody');
+  function centered(){const n=d.querySelector('.lyric-line.current');const target=Math.max(0,Math.min(lyricBody.scrollHeight-lyricBody.clientHeight,n.offsetTop+n.offsetHeight/2-lyricBody.clientHeight/2));return Math.abs(lyricBody.scrollTop-target)<2;}
+  for(const ratio of [.7,.2,.55,.56,.3,.31]) {engine.seekTo(ratio);await until(()=>!media.seeking,'seek finished');await wait(60);check(d.querySelector('.lyric-line.current')===d.querySelectorAll('.lyric-line')[Math.floor(media.currentTime/4)],'highlight follows actual time '+ratio);check(centered(),'stable wrapped center '+ratio);}
+  lyricBody.scrollTo({top:0,behavior:'smooth'});drag([.7,.1,.65,.35,.36]);
+  await until(()=>!media.seeking,'rapid drag done');await wait(600);
+  check(Math.abs(media.currentTime-21.6)<.1 && centered(),'rapid drag interrupts smooth scroll and keeps final position');
+  const current=d.querySelector('.lyric-line.current');current.style.fontSize='38px';await wait(150);check(centered(),'font resize recenters paused line');
+  current.style.transform='scale(1.12)';engine.seekTo(.32);await until(()=>!media.seeking,'scaled seek');await wait(150);check(centered(),'scale independent center');
+  frame.style.width='390px';await wait(200);check(centered(),'viewport wrap recenters');
+  frame.style.width='100%';
   // Reload the actual app and read the persisted resources in its new realm.
   frame.contentWindow.location.reload();await wait(300);
   await until(()=>frame.contentDocument.querySelector('#page-home .page-head'),'reload');
@@ -216,7 +253,7 @@ try {
   const restoredTransfer=await frame.contentWindow.eval('import("/src/services/transferService.js")');
   await restoredTransfer.importLibrary(new Blob([JSON.stringify({formatVersion:2,lyrics:[{songId:'browser-b',text:'JSON 中文 / English'}]})]));
   check((await restored.Lyrics.get('browser-b')).text==='JSON 中文 / English' && (await restored.Lyrics.get('browser-a')).text===preservedA && (await restored.Songs.all()).length===2,'JSON import overwrites target lyrics without clearing other songs');
-  const cache=await caches.open('lumen-shell-v14');
+  const cache=await caches.open('lumen-shell-v15');
   for(const path of ['src/services/lyricFile.js','src/components/songResources.js','src/components/playerLyrics.js','src/lyrics/lrc.mjs']) check(!!await cache.match(new URL('../'+path,location.href)),'cached '+path);
   await fetch('/__offline',{method:'POST'});
   frame.contentWindow.location.reload();await wait(200);

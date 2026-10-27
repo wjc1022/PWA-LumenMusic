@@ -44,6 +44,7 @@ let currentObjectUrl = null;
 let sourceRevision = 0;
 let cancelSourceWait = null;
 let pendingRestore = null;
+let pendingSeek = null;
 let activeSource = null;
 let selectionRevision = 0;
 let currentVariant = "vocals"; // "vocals" | "instrumental"
@@ -153,6 +154,7 @@ function sourceFor(song, variant) {
 }
 
 function loadSongIntoElement(source) {
+  pendingSeek = null;
   sourceRevision++;
   cancelSourceWait?.();
   if (currentObjectUrl) {
@@ -300,6 +302,9 @@ export async function switchVariant(variant, reload = false) {
     songId: currentSong.id, targetVariant: variant, phase: "loading",
     baseline: previous?.baseline || { source: activeSource, variant: currentVariant, time: audioEl.currentTime },
     wantsPlaying: previous ? previous.wantsPlaying : !audioEl.paused,
+    time: previous ? previous.time : audioEl.currentTime,
+    duration: previous?.duration || audioEl.duration,
+    seekRatio: previous?.seekRatio ?? pendingSeek,
   };
   pendingRestore = operation;
   let request;
@@ -314,7 +319,8 @@ export async function switchVariant(variant, reload = false) {
   }
   async function restoreTransport() {
     try {
-      audioEl.currentTime = Number.isFinite(audioEl.duration) ? Math.min(operation.baseline.time, audioEl.duration) : operation.baseline.time;
+      const time = operation.seekRatio === null ? operation.time : operation.seekRatio * audioEl.duration;
+      audioEl.currentTime = Number.isFinite(audioEl.duration) ? Math.min(time, audioEl.duration) : time;
       operation.phase = "ready";
       if (operation.wantsPlaying) {
         const failure = await waitForPlayback(operation);
@@ -403,8 +409,27 @@ export async function toggleFavorite(song) {
 }
 
 export function seekTo(ratio) {
-  if (audioEl.duration) audioEl.currentTime = ratio * audioEl.duration;
+  if (!Number.isFinite(ratio)) return;
+  ratio = Math.max(0, Math.min(1, ratio));
+  const duration = Number.isFinite(audioEl.duration) && audioEl.duration > 0
+    ? audioEl.duration : pendingRestore?.duration;
+  if (pendingRestore) {
+    pendingRestore.seekRatio = duration > 0 ? null : ratio;
+    if (duration > 0) pendingRestore.time = ratio * duration;
+    if (pendingRestore.phase === "loading") return;
+  }
+  // Keep the ratio until metadata exists; assigning currentTime before that
+  // can throw or be discarded by the browser. New sources clear this intent.
+  pendingSeek = ratio;
+  if (Number.isFinite(audioEl.duration) && audioEl.duration > 0) {
+    try { audioEl.currentTime = ratio * audioEl.duration; pendingSeek = null; }
+    catch { /* retry once metadata is available */ }
+  }
 }
+
+audioEl.addEventListener("loadedmetadata", () => {
+  if (pendingSeek !== null) seekTo(pendingSeek);
+});
 
 audioEl.addEventListener("ratechange", () => { if (audioEl.playbackRate !== 1) audioEl.playbackRate = 1; });
 audioEl.addEventListener("play", () => emit("playstate", pendingRestore?.wantsPlaying ?? true));

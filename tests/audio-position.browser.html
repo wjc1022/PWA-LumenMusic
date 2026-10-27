@@ -1,0 +1,72 @@
+<!doctype html><meta charset="utf-8"><title>Stable source switching: decoded audio position</title>
+<pre id="result">RUNNING</pre><iframe src="../index.html" style="width:100%;height:850px"></iframe>
+<script type="module">
+const frame=document.querySelector('iframe'),result=document.querySelector('#result');
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+const records=[];
+async function until(fn,label){for(let n=0;n<400;n++){if(fn())return;await wait(25);}throw Error('timeout '+label);}
+const check=(ok,label)=>{if(!ok)throw Error(label);};
+try {
+ await until(()=>frame.contentDocument.querySelector('#page-home .page-head'),'boot');
+ const w=frame.contentWindow,d=w.document;
+ const engine=await w.eval('import("/src/services/audioEngine.js")'),db=await w.eval('import("/src/database/db.js")');
+ // Each second has a distinct audible tone. Decode output identifies its
+ // absolute position independently of currentTime, progress UI and lyrics.
+ const rate=16000,seconds=48,bytes=new ArrayBuffer(44+rate*seconds*2),v=new DataView(bytes);
+ const str=(o,s)=>[...s].forEach((c,i)=>v.setUint8(o+i,c.charCodeAt(0)));
+ str(0,'RIFF');v.setUint32(4,bytes.byteLength-8,true);str(8,'WAVE');str(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,rate,true);v.setUint32(28,rate*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);str(36,'data');v.setUint32(40,bytes.byteLength-44,true);
+ for(let i=0;i<rate*seconds;i++){const second=Math.floor(i/rate),hz=440+40*second;v.setInt16(44+i*2,Math.round(10000*Math.sin(2*Math.PI*hz*(i%rate)/rate)),true);}
+ const referenceMode=location.search==='?reference';
+ const blob=referenceMode?await (await fetch('/__reference-audio')).blob():new w.Blob([bytes],{type:'audio/wav'});
+ const song={id:'position-probe',title:'Position probe',artist:'Synthetic second markers',audioBlob:blob,instrumentalBlob:blob,duration:seconds};
+ await db.Songs.add(song);
+ const context=new w.AudioContext(),source=context.createMediaElementSource(engine.audioEl),analyser=context.createAnalyser();
+ analyser.fftSize=4096;analyser.smoothingTimeConstant=0;source.connect(analyser);analyser.connect(context.destination);await context.resume();
+ const reference=referenceMode?await context.decodeAudioData(await blob.arrayBuffer()):null;
+ const pcm=new Float32Array(analyser.fftSize);
+ const audio=engine.audioEl;
+ function matchOutput(){
+  analyser.getFloatTimeDomainData(pcm);
+  const channels=Array.from({length:reference.numberOfChannels},(_,i)=>reference.getChannelData(i));
+  const sr=reference.sampleRate,end=audio.currentTime,center=Math.round((end-pcm.length/sr)*sr);
+  let best=-2,bestStart=0;
+  // Search a +/- 2 s window, including gross wrong-position errors. Compare
+  // downmixed independently decoded reference with the actual output window.
+  function score(start){let xy=0,xx=0,yy=0;for(let i=0;i<pcm.length;i+=8){let y=0;for(const c of channels)y+=c[start+i]||0;y/=channels.length;const x=pcm[i];xy+=x*y;xx+=x*x;yy+=y*y;}return xy/Math.sqrt(xx*yy||1);}
+  for(let pos=Math.max(0,center-sr*2);pos<center+sr*2;pos+=16){const value=score(pos);if(value>best){best=value;bestStart=pos;}}
+  const coarse=bestStart;for(let pos=Math.max(0,coarse-16);pos<=coarse+16;pos++){const value=score(pos);if(value>best){best=value;bestStart=pos;}}
+  return {correlation:+best.toFixed(3),matchedOutputEnd:+((bestStart+pcm.length)/sr).toFixed(3),outputOffset:+(((bestStart+pcm.length)/sr)-end).toFixed(3)};
+ }
+
+ async function stable(){await until(()=>!engine.getVariantStatus().pending&&!audio.seeking&&!audio.paused&&audio.readyState>=3,'stable playback');await wait(200);}
+ const spectrum=new Float32Array(analyser.frequencyBinCount);
+ async function sample(label){
+  await stable();await until(()=>audio.currentTime%1>.3 && audio.currentTime%1<.65,'away from tone boundary');analyser.getFloatFrequencyData(spectrum);let peak=1;for(let i=2;i<spectrum.length;i++)if(spectrum[i]>spectrum[peak])peak=i;
+  const frequency=peak*context.sampleRate/analyser.fftSize,decodedSecond=Math.round((frequency-440)/40),time=audio.currentTime;
+  const display=d.querySelector('#sheetCurrentTime').textContent;
+  const matched=referenceMode?matchOutput():{};
+  const row={...matched,label,variant:engine.getCurrentVariant(),time:+time.toFixed(3),display,...(referenceMode?{}:{frequency:+frequency.toFixed(1),decodedSecond}),seeking:audio.seeking};records.push(row);
+  check(referenceMode ? matched.correlation>.75 && Math.abs(matched.outputOffset)<.3 : Math.abs(decodedSecond-Math.floor(time))<=0,'decoded output differs from currentTime: '+JSON.stringify(row));
+  const parts=display.split(':').map(Number);check(Math.abs(parts[0]*60+parts[1]-time)<1.4,'stale display: '+JSON.stringify(row));
+ }
+ const track=d.querySelector('#sheetProgressTrack');track.setPointerCapture=()=>{};track.releasePointerCapture=()=>{};
+ async function drag(seconds){const r=track.getBoundingClientRect();track.dispatchEvent(new w.PointerEvent('pointerdown',{pointerId:1,clientX:r.left+r.width*seconds/audio.duration}));track.dispatchEvent(new w.PointerEvent('pointerup',{pointerId:1}));await stable();}
+ async function change(variant){
+  await stable();const before=audio.currentTime;const outcome=await engine.switchVariant(variant);
+  records.push({label:'switch completion',variant,before:+before.toFixed(3),after:+audio.currentTime.toFixed(3),seekingAtReturn:audio.seeking,ok:outcome.ok});
+  check(outcome.ok,'switch failed');check(!audio.seeking,'switch returned before native seek completion');check(Math.abs(audio.currentTime-before)<.5,'final source time not preserved');
+  await stable();
+ }
+ await engine.selectSong(song,[song]);await stable();await sample('original playing');
+ await change('instrumental');await sample('instrumental playing');
+ await drag(13.15);await sample('instrumental after completed drag');
+ await change('vocals');await sample('original after switch back');
+ await drag(31.15);await sample('original after completed drag');
+ await change('instrumental');await sample('instrumental after reverse switch');
+ await drag(9.15);await sample('instrumental reverse seek complete');
+ await change('vocals');await sample('original after reverse seek and switch');
+ audio.pause();await context.close();
+ result.textContent='PASS stable same-file '+(referenceMode?'MP3 PCM correlation':'WAV tone output')+'\n'+JSON.stringify(records,null,2);
+} catch(error){result.textContent='FAIL '+error.stack+'\n'+JSON.stringify(records,null,2);}
+await fetch('/__result',{method:'POST',body:result.textContent});
+</script>

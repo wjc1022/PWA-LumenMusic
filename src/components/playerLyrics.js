@@ -24,7 +24,16 @@ export function initPlayerLyrics() {
     frame = null;
   }
 
-  function sync() {
+  function center(index, instant = false) {
+    const node = nodes[index];
+    if (!node) return;
+    // Layout coordinates exclude transforms and smooth-scroll intermediate
+    // rectangles. The body is the offset parent, including for wrapped lines.
+    const top = Math.max(0, node.offsetTop + node.offsetHeight / 2 - body.clientHeight / 2);
+    body.scrollTo({ top, behavior: instant || reducedMotion() || audioEl.seeking ? 'instant' : 'smooth' });
+  }
+
+  function sync(recenter = false) {
     if (!isOpen()) return;
     const index = findActiveLine(lines, audioEl.currentTime);
     if (index !== lastIndex) {
@@ -41,11 +50,11 @@ export function initPlayerLyrics() {
       if (index >= 0 && nodes[index]) {
         const node = nodes[index];
         node.setAttribute('aria-current', 'true');
-        body.scrollTo({ top: Math.max(0, body.scrollTop + node.getBoundingClientRect().top - body.getBoundingClientRect().top - (body.clientHeight - node.offsetHeight) / 2), behavior: reducedMotion() || audioEl.seeking ? 'auto' : 'smooth' });
+        center(index, recenter);
       }
       lastIndex = index;
       lastWord = -2;
-    }
+    } else if (recenter) center(index, true);
     if (index < 0 || !lines[index]?.words) return;
     const wordIndex = findActiveWord(lines[index].words, audioEl.currentTime);
     if (wordIndex === lastWord) return;
@@ -118,8 +127,20 @@ export function initPlayerLyrics() {
 
   on('playstate', startLoop);
   document.addEventListener('visibilitychange', startLoop);
-  on('timeupdate', sync);
+  on('timeupdate', () => sync());
   on('trackchange', song => { if (isOpen()) open(song); });
-  ['seeking', 'seeked', 'loadedmetadata', 'ended', 'pause'].forEach(event => audioEl.addEventListener(event, startLoop));
+  ['seeking', 'seeked', 'loadedmetadata', 'ended', 'pause'].forEach(event => audioEl.addEventListener(event, () => { sync(true); startLoop(); }));
+  // Observe both viewport and line sizes: font loading, font size changes,
+  // zoom and wrapping can move the active line while playback is paused.
+  if (typeof ResizeObserver !== 'undefined') {
+    const observer = new ResizeObserver(() => sync(true));
+    observer.observe(body);
+    const mutations = new MutationObserver(() => {
+      observer.disconnect(); observer.observe(body);
+      nodes.forEach(node => observer.observe(node));
+    });
+    mutations.observe(body, { childList: true });
+  }
+  window.addEventListener?.('resize', () => sync(true));
   return { open, close };
 }

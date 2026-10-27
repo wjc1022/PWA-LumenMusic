@@ -104,19 +104,18 @@ export function initMiniPlayer() {
   }
 
   progressTrack.addEventListener("pointerdown", (e) => {
-    if (!audioEl.duration) return;
     isDragging = true;
     progressTrack.classList.add("dragging");
     progressTrack.setPointerCapture(e.pointerId);
     const ratio = ratioFromEvent(e);
-    updateProgressUI(ratio * audioEl.duration, audioEl.duration);
+    if (Number.isFinite(audioEl.duration)) updateProgressUI(ratio * audioEl.duration, audioEl.duration);
     seekTo(ratio);
   });
 
   progressTrack.addEventListener("pointermove", (e) => {
-    if (!isDragging || !audioEl.duration) return;
+    if (!isDragging) return;
     const ratio = ratioFromEvent(e);
-    updateProgressUI(ratio * audioEl.duration, audioEl.duration);
+    if (Number.isFinite(audioEl.duration)) updateProgressUI(ratio * audioEl.duration, audioEl.duration);
     seekTo(ratio);
   });
 

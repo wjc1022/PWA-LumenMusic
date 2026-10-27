@@ -6,7 +6,7 @@
    so there is no user media to precache here.
    ========================================================= */
 
-const CACHE_NAME = "lumen-shell-v14";
+const CACHE_NAME = "lumen-shell-v15";
 
 const APP_SHELL = [
   "./",

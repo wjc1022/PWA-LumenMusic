@@ -46,7 +46,7 @@ async function setup(settings = { playbackRate: 1.75, repeatMode: 'all' }) {
   const a={id:'a',audioBlob:{name:'original'},instrumentalBlob:{name:'instrumental'}}, b={id:'b',audioBlob:{name:'B'}};
   records.set(a.id,a);records.set(b.id,b);
   await api.selectSong(a,[a,b]);
-  const clean=()=>{assert.equal(timers.size,0);assert.equal(audio.waits.get('loadedmetadata')?.size||0,0);assert.equal(audio.waits.get('error')?.size||0,0);assert.equal(audio.waits.get('pause')?.size,1);assert.equal(api.getVariantStatus().pending,false);};
+  const clean=()=>{assert.equal(timers.size,0);assert.equal(audio.waits.get('loadedmetadata')?.size||0,1);assert.equal(audio.waits.get('error')?.size||0,0);assert.equal(audio.waits.get('pause')?.size,1);assert.equal(api.getVariantStatus().pending,false);};
   const expire=()=>{assert.equal(timers.size,1);[...timers.values()][0]();};
   return {api,audio,a,b,errors,states,timers,settings,clean,expire,source:()=>urls.get(audio.src)};
 }
@@ -156,4 +156,26 @@ test('synchronous loader exceptions still stop and report a failed rollback',asy
   const h=await setup();h.audio.plans.push('throw','throw','throw');
   assert.equal((await h.api.switchVariant('instrumental')).reason,'restore-failed');
   assert.equal(h.audio.paused,true);assert.deepEqual(h.errors,['player.variantRestoreFailed']);h.clean();
+});
+
+test('latest seek survives loading and rollback', async () => {
+  const h=await setup();h.audio.currentTime=8;
+  const pending=h.api.switchVariant('instrumental');h.api.seekTo(.5);
+  h.audio.dispatchEvent(new Event('error'));await flush();h.api.seekTo(.75);
+  h.audio.dispatchEvent(new Event('loadedmetadata'));await pending;
+  assert.equal(h.audio.currentTime,45);h.clean();
+});
+
+test('seek before metadata keeps latest ratio and new selection clears it',async()=>{
+ const h=await setup();h.audio.duration=NaN;h.api.seekTo(.2);h.api.seekTo(.7);
+ h.audio.duration=60;h.audio.dispatchEvent(new Event('loadedmetadata'));assert.equal(h.audio.currentTime,42);
+ h.audio.duration=NaN;h.api.seekTo(.9);await h.api.selectSong(h.b);h.audio.duration=60;
+ h.audio.dispatchEvent(new Event('loadedmetadata'));assert.equal(h.audio.currentTime,42);
+});
+test('unknown target duration and superseding switch preserve latest seek',async()=>{
+ const h=await setup();h.audio.currentTime=8;const first=h.api.switchVariant('instrumental');
+ h.audio.duration=NaN;h.api.seekTo(.5);const second=h.api.switchVariant('vocals');
+ h.audio.duration=60;h.audio.dispatchEvent(new Event('loadedmetadata'));
+ assert.equal((await first).reason,'superseded');assert.equal((await second).ok,true);
+ assert.equal(h.audio.currentTime,30);h.clean();
 });

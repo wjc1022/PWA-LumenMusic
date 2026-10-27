@@ -171,3 +171,11 @@ test('plain text stays uniform and reloading or switching clears old visual stat
   assert.equal(state.lines()[1].classList.contains('next'), true);
   assert.ok(state.lines().every(line => !previous.includes(line)));
 });
+
+test('same-line seek recenters from layout even if animated rectangles are displaced',async()=>{
+ const h=await setup(async()=>({text:'[00:00]first\n[00:04]second'}));
+ h.modal.open({id:'a'});await flush();const body=h.elements.lyricsBody,node=h.lines()[1];
+ node.offsetTop=700;node.offsetHeight=120;node.getBoundingClientRect=()=>({top:-999});
+ h.audio.currentTime=5;h.audio.dispatch('seeked');assert.equal(body.scrollTop,560);
+ body.scrollTop=123;h.audio.currentTime=6;h.audio.dispatch('seeked');assert.equal(body.scrollTop,560);
+});
