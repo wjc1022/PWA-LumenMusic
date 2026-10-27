@@ -126,7 +126,7 @@ export function initPlayerSheet() {
     subtitlesBtn.textContent=t(subtitlesBtn.dataset.i18n);
     const order=[shuffleBtn,prevBtn,playBtn,nextBtn,repeatBtn,favBtn,fullscreenBtn,variantBtn,queueBtn,subtitlesBtn];
     for(const [key,button] of Object.entries(buttons)) {
-      button.hidden=!prefs[key] || (key==='variant' && video) || (['subtitles','fullscreen'].includes(key) && !video) || (key==='subtitles' && !wide);
+      button.hidden=!prefs[key] || (key==='variant' && video) || (key==='fullscreen' && !video) || (key==='subtitles' && video && !wide);
     }
     moreBtn.hidden=true;
     for(const button of order) (wide || [shuffleBtn,prevBtn,playBtn,nextBtn,repeatBtn].includes(button)?controls:secondary).append(button);

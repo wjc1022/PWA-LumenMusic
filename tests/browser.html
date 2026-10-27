@@ -64,6 +64,24 @@ try {
     check(open(), page+' selection expands');
   }
   await until(()=>engine.audioEl.readyState>=1,'audio metadata');
+  await until(()=>d.querySelector('.lyric-line'),'audio lyrics loaded');
+  const subtitleButton=d.querySelector('#sheetSubtitlesBtn'),lyricBodyBefore=d.querySelector('#lyricsBody').textContent;
+  check(!subtitleButton.hidden,'audio subtitle toggle visible');
+  subtitleButton.click();
+  check(w.getComputedStyle(d.querySelector('#lyricsBody')).display==='none' && subtitleButton.getAttribute('aria-pressed')==='false','audio lyrics can be hidden');
+  d.querySelector('#playerSheetClose').click();d.querySelector('#miniExpand').click();
+  check(w.getComputedStyle(d.querySelector('#lyricsBody')).display==='none','audio lyrics stay hidden after reopening');
+  subtitleButton.click();
+  await until(()=>d.querySelector('#lyricsBody').textContent===lyricBodyBefore,'reopened audio lyrics loaded');
+  check(w.getComputedStyle(d.querySelector('#lyricsBody')).display!=='none' && d.querySelector('#lyricsBody').textContent===lyricBodyBefore,'audio lyrics can be restored without changing text');
+  await wait(400);
+  const sheetClose=d.querySelector('#playerSheetClose'),closeRect=sheetClose.getBoundingClientRect();
+  check(d.elementFromPoint(closeRect.left+closeRect.width/2,closeRect.top+closeRect.height/2)?.closest('#playerSheetClose')===sheetClose,'audio close button is reachable above lyrics');
+  sheetClose.click();check(!open(),'audio X collapses player');
+  d.querySelector('#menuToggle').click();
+  d.querySelector('.menu-item[data-page="library"]').click();
+  check(d.querySelector('#page-library').classList.contains('active'),'library navigation works after closing player');
+  d.querySelector('#miniExpand').click();
   d.querySelector('#playerSheetClose').click();check(!open(),'close collapses');
   d.querySelector('#playBtn').click();await wait(50);check(!open(),'mini play stays collapsed');
   d.querySelector('#nextBtn').click();await wait(80);check(!open(),'mini next stays collapsed');
@@ -298,7 +316,7 @@ try {
   const restoredTransfer=await frame.contentWindow.eval('import("/src/services/transferService.js")');
   await restoredTransfer.importLibrary(new Blob([JSON.stringify({formatVersion:3,songs:[{id:'browser-b',audioBlob:'data:audio/wav;base64,'+btoa(Array.from(new Uint8Array(await (await restored.Songs.withMedia('browser-b')).audioBlob.arrayBuffer()),byte=>String.fromCharCode(byte)).join(''))}],playlists:[],recents:[],settings:[],lyrics:[{songId:'browser-b',text:'JSON 中文 / English'}]})]));
   check((await restored.Lyrics.get('browser-b')).text==='JSON 中文 / English' && (await restored.Lyrics.get('browser-a')).text===preservedA && (await restored.Songs.all()).length===2,'JSON import overwrites target lyrics without clearing other songs');
-  const cache=await caches.open('lumen-shell-v31');
+  const cache=await caches.open('lumen-shell-v33');
   for(const path of ['src/services/mediaTimeline.js','src/services/mediaDiagnostics.js','src/components/mediaDiagnostics.js','src/services/playerPreferences.js','src/services/lyricFile.js','src/components/songResources.js','src/components/playerLyrics.js','src/lyrics/lrc.mjs']) check(!!await cache.match(new URL('../'+path,location.href)),'cached '+path);
   await fetch('/__offline',{method:'POST'});
   frame.contentWindow.location.reload();await wait(200);
