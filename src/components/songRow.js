@@ -13,6 +13,7 @@ import { t, getLang } from "../services/i18nService.js";
 
 export function createSongRow(song, {
   isPlaying = false,
+  showMediaType = false,
   onPlay,
   onToggleFavorite,
   onRemove,
@@ -42,8 +43,14 @@ export function createSongRow(song, {
     loading: "lazy",
   });
 
+  const title = el('div', { class: 'song-title' }, song.title);
+  const titleLine = showMediaType ? el('div', { class: 'song-title-line' }, [
+    title,
+    el('span', { class: 'media-type-badge ' + (song.mediaType === 'video' ? 'video' : 'audio') },
+      t(song.mediaType === 'video' ? 'library.video' : 'library.audio')),
+  ]) : title;
   const meta = el("div", { class: "song-meta" }, [
-    el("div", { class: "song-title" }, song.title),
+    titleLine,
     el("div", { class: "song-artist" }, song.mediaType === "video" ? `${t("player.video")} ? ${song.artist || ""}` : song.artist),
   ]);
 

@@ -79,6 +79,29 @@ try {
   d.querySelector('#playerSheetClose').click();
   let panel = [...d.querySelectorAll('.song-resources')].find(p=>p.textContent.includes('browser-b'));
   panel.open=true;
+  await until(()=>!panel.querySelector('button').disabled,'resource state loaded');
+  check(panel.querySelector('button').textContent==='Add lyrics' && !panel.querySelector('button').classList.contains('resource-replace'),'missing lyrics uses ordinary add action');
+  check(panel.querySelectorAll('button')[1].textContent==='Add instrumental','missing instrumental uses add action');
+  check([...d.querySelectorAll('#page-library .media-type-badge')].every(b=>b.textContent==='Audio'),'library audio labels');
+  rowB.querySelector('.song-remove-btn').click();
+  check(d.querySelector('dialog[open]').textContent.includes('browser-b'),'delete confirmation names target');
+  d.querySelector('dialog[open] button').click();await wait(20);
+  check(!!await db.Songs.get('browser-b') && rowB.isConnected,'cancel deletion preserves resource');
+  const resources = await w.eval('import("/src/components/songResources.js")');
+  const videoPanel = resources.createSongResources({id:'browser-a',mediaType:'video',title:'Test'});
+  check(videoPanel.querySelectorAll('button').length===1,'video has no instrumental picker');
+  const rows = await w.eval('import("/src/components/songRow.js")');
+  const videoRow=rows.createSongRow({id:'test-video',title:'Long '.repeat(50),artist:'Test',mediaType:'video'}, {showMediaType:true});
+  const card=d.querySelector('#page-library .library-song-card');card.append(videoRow);
+  frame.style.width='320px';await wait(50);
+  for(const theme of ['light','dark']) {
+    d.documentElement.dataset.theme=theme;
+    const badge=videoRow.querySelector('.media-type-badge');
+    check(badge.textContent==='Video' && badge.classList.contains('video'),'video label '+theme);
+    check(badge.getBoundingClientRect().right<=videoRow.getBoundingClientRect().right && videoRow.scrollWidth<=videoRow.clientWidth,'narrow long title fits '+theme);
+  }
+  videoRow.remove();frame.style.width='100%';
+
   const lyricsInput = panel.querySelector('input[type=file]');
   check(!lyricsInput.hasAttribute('accept'),'lyrics picker unrestricted');
   await db.Lyrics.save('browser-b','original');
@@ -112,7 +135,7 @@ try {
   d.querySelector('#sheetPrevBtn').click();engine.audioEl.pause();d.querySelector('#playerSheetClose').click();
   panel.querySelectorAll('button')[1].click();choose(panel.querySelectorAll('input')[1],wav(11,'replacement.wav'));
   await until(async()=>(await db.Songs.get('browser-b')).instrumentalBlob.name==='replacement.wav','replace instrumental');
-  check(true,'existing instrumental replaced');
+  check(panel.querySelectorAll('button')[1].textContent==='Replace instrumental' && panel.querySelectorAll('button')[1].classList.contains('resource-replace'),'saved instrumental immediately uses emphasized replace action');
   check(engine.getCurrentSong().id==='browser-a','replacing non-current resource preserves current song');
   rowB.click();
   check(engine.getCurrentSong().instrumentalBlob?.name==='replacement.wav','existing library row uses replaced instrumental immediately');
@@ -243,6 +266,18 @@ try {
   current.style.transform='scale(1.12)';engine.seekTo(.32);await until(()=>!media.seeking,'scaled seek');await wait(150);check(centered(),'scale independent center');
   frame.style.width='390px';await wait(200);check(centered(),'viewport wrap recenters');
   frame.style.width='100%';
+  await navigate('home');await navigate('library');
+  const restoredPanel=[...d.querySelectorAll('.song-resources')].find(p=>p.textContent.includes('browser-b'));
+  await until(()=>!restoredPanel.querySelector('button').disabled,'reentered resource state');
+  check([...restoredPanel.querySelectorAll('button')].every(b=>b.classList.contains('resource-replace')),'reentry reads persisted lyrics and instrumental');
+  const library=await w.eval('import("/src/pages/library.js")');
+  await db.Songs.add({id:'delete-test',title:'Delete target',artist:'Test',audioBlob:audio});
+  const testLibrary=d.createElement('div');d.body.append(testLibrary);
+  await library.renderLibrary(testLibrary,{onImportRequested:()=>{},onSongRemoved:s=>db.Songs.remove(s.id)});
+  testLibrary.querySelector('[data-id="delete-test"] .song-remove-btn').click();
+  d.querySelector('dialog[open] button:last-child').click();
+  await until(async()=>!await db.Songs.get('delete-test'),'confirmed delete');
+  check(!await db.Songs.get('delete-test'),'confirmed delete uses existing removal');testLibrary.remove();
   // Reload the actual app and read the persisted resources in its new realm.
   frame.contentWindow.location.reload();await wait(300);
   await until(()=>frame.contentDocument.querySelector('#page-home .page-head'),'reload');
@@ -255,7 +290,7 @@ try {
   const restoredTransfer=await frame.contentWindow.eval('import("/src/services/transferService.js")');
   await restoredTransfer.importLibrary(new Blob([JSON.stringify({formatVersion:2,lyrics:[{songId:'browser-b',text:'JSON 中文 / English'}]})]));
   check((await restored.Lyrics.get('browser-b')).text==='JSON 中文 / English' && (await restored.Lyrics.get('browser-a')).text===preservedA && (await restored.Songs.all()).length===2,'JSON import overwrites target lyrics without clearing other songs');
-  const cache=await caches.open('lumen-shell-v26');
+  const cache=await caches.open('lumen-shell-v28');
   for(const path of ['src/services/mediaTimeline.js','src/services/mediaDiagnostics.js','src/components/mediaDiagnostics.js','src/services/playerPreferences.js','src/services/lyricFile.js','src/components/songResources.js','src/components/playerLyrics.js','src/lyrics/lrc.mjs']) check(!!await cache.match(new URL('../'+path,location.href)),'cached '+path);
   await fetch('/__offline',{method:'POST'});
   frame.contentWindow.location.reload();await wait(200);

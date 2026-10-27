@@ -9,10 +9,17 @@ export function createSongResources(song, onUpdated) {
   const panel = el('details', { class: 'song-resources' });
   panel.appendChild(el('summary', {}, t('library.manageResources') + ' / ' + song.title));
   const status = el('p', { role: 'status' });
-  function picker(label, kind) {
+  const buttons = new Map();
+  function updateButton(kind, exists) {
+    const button = buttons.get(kind);
+    button.textContent = t('library.' + (exists ? 'replace' : 'add') + (kind === 'lyrics' ? 'Lyrics' : 'Instrumental'));
+    button.classList.toggle('resource-replace', exists);
+  }
+  function picker(kind) {
     const input = el('input', { type: 'file', hidden: true });
     if (kind === 'audio') input.accept = 'audio/*,.mp3,.m4a,.wav,.aac,.flac,.ogg,.aif,.aiff,.caf';
-    const button = el('button', { class: 'btn ghost' }, label);
+    const button = el('button', { class: 'btn ghost', disabled: true });
+    buttons.set(kind, button);
     button.addEventListener('click', () => {
       input.value = '';
       input.click();
@@ -28,9 +35,11 @@ export function createSongResources(song, onUpdated) {
           const text = await readLyricFile(file);
           if (!await Songs.get(song.id)) throw new Error('Song no longer exists');
           await Lyrics.save(song.id, text);
+          updateButton(kind, true);
           refreshCurrentSong(await Songs.get(song.id));
         } else {
           const updated = await attachInstrumental(song, file);
+          updateButton(kind, !!updated.instrumentalBlob);
           refreshCurrentSong(updated);
           onUpdated(updated);
         }
@@ -42,8 +51,16 @@ export function createSongResources(song, onUpdated) {
     });
     return el('div', { class: 'resource-picker' }, [button, input]);
   }
-  panel.append(picker(t('library.replaceLyrics'), 'lyrics'));
-  if (song.mediaType !== 'video') panel.append(picker(t('library.replaceInstrumental'), 'audio'));
+  panel.append(picker('lyrics'));
+  if (song.mediaType !== 'video') panel.append(picker('audio'));
   panel.append(status);
+  Promise.all([Lyrics.get(song.id), Songs.get(song.id)]).then(([lyrics, stored]) => {
+    updateButton('lyrics', typeof lyrics?.text === 'string');
+    if (buttons.has('audio')) updateButton('audio', !!stored?.instrumentalBlob);
+    buttons.forEach(button => { button.disabled = !stored; });
+  }).catch(error => {
+    console.error('Resource state read failed', error);
+    status.textContent = t('library.resourceError');
+  });
   return panel;
 }

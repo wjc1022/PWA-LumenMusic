@@ -89,10 +89,12 @@ export async function renderLibrary(container, { onImportRequested, onSongRemove
       const card = el("div", { class: "library-song-card" });
       listWrap.appendChild(card);
       card.appendChild(createSongRow(song, {
+        showMediaType: true,
         isPlaying: !!current && current.id === song.id,
         onPlay: (s) => selectSong(s, filtered),
         onToggleFavorite: (s) => toggleFavorite(s),
         onRemove: async (s) => {
+          if (!await confirmRemoval(s)) return;
           await onSongRemoved(s);
           const idx = allSongs.findIndex((x) => x.id === s.id);
           if (idx > -1) allSongs.splice(idx, 1);
@@ -117,4 +119,26 @@ export async function renderLibrary(container, { onImportRequested, onSongRemove
     listWrap.querySelectorAll('.song-row').forEach(row => row.classList.toggle('playing', row.dataset.id === song?.id));
   });
   draw();
+}
+
+function confirmRemoval(song) {
+  return new Promise(resolve => {
+    const previousFocus = document.activeElement;
+    const dialog = el('dialog', { class: 'library-delete-dialog', 'aria-label': t('common.delete') });
+    const cancel = el('button', { class: 'btn ghost', type: 'button' }, t('common.cancel'));
+    const remove = el('button', { class: 'btn primary', type: 'button' }, t('common.delete'));
+    dialog.append(el('p', {}, t('library.deleteConfirm', { name: song.title })),
+      el('div', { class: 'lmp-actions' }, [cancel, remove]));
+    cancel.addEventListener('click', () => dialog.close());
+    remove.addEventListener('click', () => dialog.close('delete'));
+    dialog.addEventListener('close', () => {
+      const confirmed = dialog.returnValue === 'delete';
+      dialog.remove();
+      previousFocus?.focus();
+      resolve(confirmed);
+    }, { once: true });
+    document.body.append(dialog);
+    dialog.showModal();
+    cancel.focus();
+  });
 }

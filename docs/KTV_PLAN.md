@@ -229,3 +229,77 @@ iPhone 已反馈歌词入口无法选取 .lrc，改为 .txt 后也未出现在�
 - SW 和诊断缓存标记统一更新为 v25，保留工作区已有横屏修改。
 - Node 相关回归 63/63，其中新增中途静默停滞留证、明确点击后恢复，以及正常进度和暂停不误报。真实 iPhone、底层文件读取和仅画面冻结但媒体时钟仍推进的情况未验证。
 - 静音 Chrome 视频回归 60/60；沙箱内 GPU 初始化失败，沙箱外隔离配置运行通过。此浏览器回归验证既有视频/横屏交互，静默停滞恢复由 Node 桩测试验证，尚未在真实设备复现。
+
+
+## Library interface update (2026-10-27, v28)
+- Added a named-resource deletion dialog with Cancel/Delete, retaining the existing removal callback. No queue/playlist cleanup or individual resource removal was added.
+- Resource actions read persisted lyrics and instrumental data, use Add/Replace labels and emphasize replacement after successful saves. Video retains its instrumental restriction.
+- Library titles carry textual audio/video badges based on mediaType; long titles truncate without changing row backgrounds. All three locales and shell/diagnostic cache versions were updated.
+- Actual validation: related Node tests 54/54; isolated muted Chrome 119/119, including deletion cancellation/confirmation, persisted state on reentry, video restrictions, 320px long-title badge bounds in both themes, resource persistence and offline reload. Chrome GPU startup failed inside the sandbox; the isolated run outside it passed. git diff --check passed with line-ending notices only.
+- Not verified: real iPhone/Safari file selection, touch, safe areas, device cache upgrades, or manual visual review. Desktop automated layout checks do not establish those results.
+
+## 数据存储、歌曲资料与歌单改造规划（2026-10-27，待实施）
+
+本节整理本轮讨论。用户已确认需要改造数据库结构、改进 Playlist、提供歌曲资料及追加属性编辑，并支持这些资料导出。本轮只记录计划，不修改运行代码、不执行数据库升级或数据迁移；以下建议结构与交互细节尚未全部定案。
+
+### 故障证据与当前结构
+
+- 用户提供的 v28 iPhone 报告：同一歌曲主媒体约 74.6 MB，13:11:52.716 的数据库读取及 13:11:52.917 的 play-count-before 首尾可读；13:11:53.012 的 play-count-committed-read 首尾均为 NotFoundError。后续持续不可读，再次写计数时报 Error preparing Blob/File data to be stored in object store，最终出现 playback-stalled。
+- 当前 incrementPlayCount、setFavorite 都读取 songs 整条记录，修改小字段后 put 整条，包含主媒体、伴奏和封面；伴奏替换也写回整条歌曲。计数更新前后是当前最直接的调查范围，但异步探测的时间线不能单独证明重写导致损坏，尚不能认定真实设备根因或既有故障资源可恢复。
+- IndexedDB 的 put 和 cursor.update 都替换整个记录值，没有 SQL 式单列更新。只传 { id, favorite } 会替换并丢失其他字段；封装 patch 后内部仍读全量、合并、put，也不能隔离 Blob。应通过拆分记录实现只写相关数据。
+- 当前 Playlist 已参与播放：从歌单内点歌以该歌单当前显示顺序建立队列；从 Library 点歌则用当前搜索、排序后的列表替换队列。仅打开歌单不改变队列。队列没有保存来源歌单身份，歌单编辑不主动同步队列，队列也不跨重启保存。
+- 当前 JSON 备份代码已同时序列化 audioBlob 与 instrumentalBlob；本文件早期“只序列化主媒体”的表述属于历史限制，不代表当前实现。localStorage 的按钮偏好和诊断记录未包含在该备份中。
+
+### 已确认的设计目标
+
+- [ ] 媒体与日常更新属性分离。播放计数、收藏、歌手、标签、自定义属性或歌单修改不得读取或提交媒体 Blob；媒体只在导入、明确替换、删除或完整恢复等相应操作中写入。
+- [ ] 主媒体、伴奏、封面独立保存和关联，替换伴奏不重写原唱；列表查询不携带大媒体记录，播放与导出按需获取资源。
+- [ ] 提供歌曲资料编辑能力，支持补充歌手、标签等标准资料，以及用户主动追加自定义属性。编辑资料不默认改写原始媒体文件的内嵌标签。
+- [ ] 标准资料、自定义字段定义及字段值均支持持久化、导出和再次导入，不因导出格式固定字段列表而丢失追加属性。
+- [ ] 改进 Playlist 与播放队列的连接，使播放范围、顺序和来源明确，避免用户误以为播放始终来自整个 Library。
+- [ ] 支持不含媒体二进制的完整资料关系文档，保留歌曲、属性、歌词、歌单及其关联；用资源引用和可用的外部链接表达媒体关系。
+
+### 建议的数据边界（名称及最终字段待定）
+
+| 对象表 | 建议内容 | 写入场景 |
+| --- | --- | --- |
+| songs | 稳定歌曲 ID、名称、歌手数组、专辑、曲风、年份、标签、时长、自定义属性、资源 ID | 资料编辑或资源关联变更 |
+| media | 稳定资源 ID、Blob、MIME、大小、资源类型等；每份主媒体、伴奏、封面独立记录 | 导入、明确替换、删除、完整恢复 |
+| songState | songId、收藏、播放次数等日常状态 | 收藏与计数等 |
+| customFields | 稳定字段 ID、显示名称、值类型等定义 | 创建或调整自定义字段 |
+| lyrics | songId、原始 text | 添加或替换歌词，保持单份原始文本契约 |
+| playlists | 稳定歌单 ID、资料、有序歌曲 ID | 歌单编辑与重排 |
+| recents | 最近播放信息 | 播放记录更新；是否扩展为逐次事件另行决定 |
+| settings | 用户偏好 | 设置变更，需梳理与 localStorage 的边界 |
+| playbackSession | 队列、来源歌单或列表、当前条目及位置等 | 若采纳会话恢复方案则保存 |
+
+- 优先在同一 lumen-db 内拆分对象表，无须为隔离记录直接更换数据库技术或拆成多个数据库。
+- 小记录内部可继续整体 put，不要求每个属性各存一条。计数的读取、加一、写回应在同一个 readwrite 事务内完成，避免并发丢失更新；其他修改同样避免旧快照整条覆盖。
+- 跨表资源替换、删除及关联修改需要明确原子事务边界，写操作以事务提交完成为成功标准。升级方案需评估已有媒体迁移的读写风险，不清空资料库，不把结构拆分当作修复既有不可读字节的保证。
+- 自定义字段建议采用稳定 ID 与显示名称分离的设计，字段重命名不破坏已有值；字段类型、重名规则、删除语义和筛选能力待定。
+
+### Playlist 改进建议（交互细节待定）
+
+- [ ] 增加明确的“播放歌单”“随机播放歌单”入口，队列保存来源类型及歌单 ID，播放器显示来源。
+- [ ] 明确从 Library 点歌会建立音乐库当前列表队列，从歌单点歌会建立歌单队列；仅浏览页面不替换队列。
+- [ ] 确定歌单编辑后的队列策略。讨论中的建议是保留当前队列快照，通过“重新载入歌单”应用修改，避免编辑时突然跳歌；该策略尚未由用户定案。
+- [ ] 确定歌曲／歌单删除时的引用清理、当前播放处理及队列位置规则，避免悬空引用。
+- [ ] 评估保存队列和位置以跨重启恢复；建议恢复后等待用户主动播放，不自动播放。是否实施及保存频率待定。
+
+### 导出与外部资料文档
+
+- [ ] 设计带 schema 版本的统一资料清单，保存稳定对象 ID、标准属性、自定义字段定义及值、标签、资源描述、歌单成员及顺序、原始歌词、收藏、计数和最近播放。设置及播放会话可选导出；诊断历史的导出范围另行确定，不默认混入可分享资料。
+- [ ] 提供“完整备份”和“仅资料导出”：前者包含媒体文件，后者仅包含相同关系清单及资源引用。审查 JSON 与 .lmp 的一致性，避免出现资料可导出但导入忽略的情况。
+- [ ] 区分本地 mediaId 与外部稳定 URL；本地 ID 只用于关联，并非另一设备可访问的下载链接，禁止把临时 blob: URL 当作长期导出地址。
+- [ ] 对只有本地文件的资源，保留 ID、MIME、大小等描述，评估内容哈希用于重新关联和校验；文件名加大小的现有指纹不是内容哈希。哈希计算时机、成本及不可读资源处理待定。
+- [ ] 外部编辑后回导需要区分“资料合并”与“完整恢复”。建议合并时省略字段保持原值，显式删除才清除；明确冲突、未知字段和无效引用的处理规则。
+- [ ] 持续向固定外部文档写入属于独立能力：固定本地 JSON 文件还是可读写 URL／服务尚未确定，亦未确认自动同步方式。先确定清单格式，不把手动导出描述为恒常同步。
+
+### 实施前待定与验收
+
+- [ ] 定案对象结构、字段类型、歌单与队列策略、外部文档载体及读写方向，再制定无清空的数据升级方案。
+- [ ] 验证收藏、计数、资料、标签及歌单修改期间零 media 写入；计数并发不丢失，资料更新不覆盖其他状态。
+- [ ] 验证资源替换／删除的事务失败保留原关联，已有数据升级失败不误报成功，故障媒体不被诊断流程自动覆盖。
+- [ ] 验证自定义属性、歌词原文、歌单顺序、用户状态在完整备份和仅资料清单中往返保留，资源缺失可明确识别并重新关联。
+- [ ] 验证歌单播放范围、来源提示、队列重载及删除行为；如实现会话恢复，验证重启恢复与用户主动播放。
+- 本节没有实施结果；未执行运行时测试，未验证真实 iPhone 修复，既有历史测试数量不作为本计划的验收结果。
