@@ -189,3 +189,14 @@ test('video selection cancels old variant restore and shares transport with audi
  h.api.seekTo(.5);assert.equal(h.audio.currentTime,30);h.api.togglePlay();assert.equal(h.audio.paused,true);
  h.api.playNext();await flush();assert.equal(h.source().name,'B');h.clean();
 });
+test('failure diagnostics retain exception stage and target without changing rollback',async()=>{
+ const h=await setup();h.audio.plans.push('throw','loadedmetadata');
+ const result=await h.api.switchVariant('instrumental');
+ assert.equal(result.restored,true);
+ const failure=h.api.getLastMediaFailure();
+ assert.equal(failure.songId,'a');assert.equal(failure.variant,'instrumental');
+ assert.equal(failure.stage,'variant-metadata');assert.equal(failure.exception.message,'load failed synchronously');
+ assert.ok(failure.time);assert.equal(failure.blob.exists,true);
+ assert.ok(!JSON.stringify(failure).includes('blob:'));
+ h.api.clearMediaFailure();assert.equal(h.api.getLastMediaFailure(),null);h.clean();
+});

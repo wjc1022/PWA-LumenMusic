@@ -25,7 +25,7 @@ if(process.argv.includes('--serve')) {
   await new Promise(()=>{});
 }
 const referenceQuery=process.env.LUMEN_TEST_AUDIO_PATH?'?reference':'';
-const testPage=process.argv.includes('--video')?'video.browser.html':process.argv.includes('--stable-audio')?'audio-position.browser.html':'browser.html';
+const testPage=process.argv.includes('--diagnostics')?'media-diagnostics.browser.html':process.argv.includes('--video')?'video.browser.html':process.argv.includes('--stable-audio')?'audio-position.browser.html':'browser.html';
 const profile=await mkdtemp(join(tmpdir(),'lumen-browser-'));
 const chrome=process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const extraFlags=process.env.LUMEN_CHROME_FLAGS?.split(' ').filter(Boolean)||[];

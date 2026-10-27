@@ -1,3 +1,4 @@
+import { buildMediaDiagnostics } from '../components/mediaDiagnostics.js';
 import { buttonKeys, getPlayerButtons, setPlayerButtons } from '../services/playerPreferences.js';
 /**
  * pages/settings.js
@@ -32,6 +33,7 @@ export async function renderSettings(container, { onLanguageChanged, onDataReset
   container.appendChild(buildThemePanel());
   container.appendChild(buildLanguagePanel(onLanguageChanged));
   container.appendChild(buildPlayerButtonsPanel());
+  container.appendChild(buildMediaDiagnostics());
   container.appendChild(buildSleepTimerPanel());
   container.appendChild(buildLmpPanel());
   container.appendChild(buildDataPanel(onDataReset));

@@ -51,6 +51,28 @@ let activeSource = null;
 let selectionRevision = 0;
 let currentVariant = "vocals"; // "vocals" | "instrumental"
 
+// Bounded best-effort diagnostics; never store source URLs or media contents.
+const FAILURE_KEY = 'lumen.lastMediaFailure';
+const safe = value => String(value ?? '').replace(/blob:[^\s]+|file:[^\s]+|[A-Za-z]:[\\/][^\s]+|\/(?:private|var|Users|home|Volumes|storage)\/[^\s]+/g, '[redacted]').slice(0, 600);
+let lastFailure = null;
+export function getLastMediaFailure() {
+ if(lastFailure) return lastFailure;
+ try {const raw=localStorage.getItem(FAILURE_KEY);if(raw?.length<6000) lastFailure=JSON.parse(raw);} catch {}
+ return lastFailure;
+}
+export function clearMediaFailure() {lastFailure=null;try{localStorage.removeItem(FAILURE_KEY);}catch{}}
+function recordFailure(stage,error,source=activeSource) {
+ try {
+ const blob=source?.blob;
+ lastFailure={time:new Date().toISOString(),songId:safe(source?.songId),variant:source?.variant,stage,
+ exception:{name:safe(error?.name),message:safe(error?.message)},
+ mediaError:{code:audioEl.error?.code??null,message:safe(audioEl.error?.message)},
+ readyState:audioEl.readyState??null,networkState:audioEl.networkState??null,
+ blob:{exists:!!blob,size:typeof blob?.size==='number'?blob.size:null,mime:safe(blob?.type)}};
+ try{localStorage.setItem(FAILURE_KEY,JSON.stringify(lastFailure));}catch{}
+ }catch{}
+}
+
 export const REPEAT_MODES = ["off", "all", "one"];
 let repeatMode = "off";
 
@@ -179,6 +201,8 @@ export function selectSong(song, newQueue) {
 
 export async function playSong(song, newQueue, selected = false) {
   const request = ++selectionRevision;
+  // Evidence only: do not replace the selected object or delay user activation.
+  if (Songs.get) void Songs.get(song.id, 'play-before-database-read').catch(() => {});
   pendingRestore = null;
   if (newQueue) setQueue(newQueue);
   const idxInQueue = queue.findIndex((s) => s.id === song.id);
@@ -187,7 +211,8 @@ export async function playSong(song, newQueue, selected = false) {
   currentVariant = "vocals";
 
   activeSource = sourceFor(song, currentVariant);
-  try { loadSongIntoElement(activeSource); } catch {
+  try { loadSongIntoElement(activeSource); } catch (error) {
+    recordFailure("select-source", error);
     audioEl.removeAttribute("src");
     emit("trackchange", currentSong);
     emit("playbackerror", "player.mediaFailed");
@@ -198,7 +223,8 @@ export async function playSong(song, newQueue, selected = false) {
   if (selected) emit("songselected", currentSong);
   try {
     await audioEl.play();
-  } catch {
+  } catch (error) {
+    recordFailure("select-play", error, sourceFor(song, "vocals"));
     if (request === selectionRevision) emit("playbackerror", "player.mediaFailed");
   }
 
@@ -214,7 +240,7 @@ export function togglePlay() {
     // user's intent instead of mistaking that internal pause for a user action.
     pendingRestore.wantsPlaying = !pendingRestore.wantsPlaying;
     if (!pendingRestore.wantsPlaying) audioEl.pause();
-    else if (pendingRestore.phase === "ready") audioEl.play().catch(() => {});
+    else if (pendingRestore.phase === "ready") audioEl.play().catch(error => recordFailure("resume-play", error));
     emit("playstate", pendingRestore.wantsPlaying);
     return;
   }
@@ -222,7 +248,7 @@ export function togglePlay() {
     if (queue.length) playSong(queue[0], queue);
     return;
   }
-  if (audioEl.paused) audioEl.play().catch(() => {});
+  if (audioEl.paused) audioEl.play().catch(error => recordFailure("resume-play", error));
   else audioEl.pause();
 }
 
@@ -241,7 +267,7 @@ function playSongDirect(song) {
  */
 // Each attempt owns one bounded metadata wait. Cancellation is distinct from
 // failure, so a superseded attempt never restores over a later user action.
-function waitForSource() {
+function waitForSource(source) {
   return new Promise(resolve => {
     const cleanup = () => {
       audioEl.removeEventListener("loadedmetadata", loaded);
@@ -251,13 +277,13 @@ function waitForSource() {
     };
     const finish = reason => { cleanup(); resolve(reason); };
     const loaded = () => finish(null);
-    const failed = () => finish("load-error");
+    const failed = error => { recordFailure("variant-metadata", error, source); finish("load-error"); };
     const cancelled = () => finish("superseded");
-    const timer = setTimeout(() => finish("timeout"), 15000);
+    const timer = setTimeout(() => { recordFailure("metadata-timeout", null, source); finish("timeout"); }, 15000);
     cancelSourceWait = cancelled;
     audioEl.addEventListener("loadedmetadata", loaded);
     audioEl.addEventListener("error", failed);
-    try { audioEl.load(); } catch { failed(); }
+    try { audioEl.load(); } catch (error) { failed(error); }
   });
 }
 
@@ -270,15 +296,15 @@ function waitForPlayback(operation) {
       if (cancelSourceWait === cancelled) cancelSourceWait = null;
     };
     const finish = reason => { cleanup(); resolve(reason); };
-    const failed = () => finish("play-error");
+    const failed = error => { recordFailure("variant-play", error, operation.diagnosticSource); finish("play-error"); };
     const cancelled = () => finish("superseded");
     const paused = () => { if (!operation.wantsPlaying) finish(null); };
-    const timer = setTimeout(() => finish("timeout"), 15000);
+    const timer = setTimeout(() => { recordFailure("play-timeout", null, operation.diagnosticSource); finish("timeout"); }, 15000);
     cancelSourceWait = cancelled;
     audioEl.addEventListener("error", failed);
     audioEl.addEventListener("pause", paused);
     try { Promise.resolve(audioEl.play()).then(() => finish(null), failed); }
-    catch { failed(); }
+    catch (error) { failed(error); }
   });
 }
 
@@ -311,8 +337,9 @@ export async function switchVariant(variant, reload = false) {
     try {
       loadSongIntoElement(source);
       request = sourceRevision;
-      return await waitForSource();
-    } catch { request = sourceRevision; return "load-error"; }
+      operation.diagnosticSource = source;
+      return await waitForSource(source);
+    } catch (error) { recordFailure("variant-source", error, source); request = sourceRevision; return "load-error"; }
   }
   async function restoreTransport() {
     try {
@@ -326,7 +353,7 @@ export async function switchVariant(variant, reload = false) {
       if (!ownsSource()) return false;
       if (!operation.wantsPlaying) audioEl.pause();
       return true;
-    } catch { return false; }
+    } catch (error) { recordFailure("restore-transport", error, operation.diagnosticSource); return false; }
   }
   function complete(source, version) {
     activeSource = source;
@@ -424,6 +451,8 @@ export function seekTo(ratio) {
   }
 }
 
+audioEl.onerror = () => recordFailure("media-event", null, pendingRestore?.diagnosticSource || activeSource);
+
 audioEl.addEventListener("loadedmetadata", () => {
   if (pendingSeek !== null) seekTo(pendingSeek);
 });
@@ -434,7 +463,7 @@ audioEl.addEventListener("pause", () => emit("playstate", pendingRestore?.wantsP
 audioEl.addEventListener("ended", () => {
   if (repeatMode === "one") {
     audioEl.currentTime = 0;
-    audioEl.play().catch(() => {});
+    audioEl.play().catch(error => recordFailure("resume-play", error));
     return;
   }
   if (repeatMode === "off" && position >= queue.length - 1) {

@@ -244,5 +244,28 @@
     "variant": "原唱／伴奏",
     "subtitles": "字幕",
     "fullscreen": "全屏／页面铺满"
+  },
+  "diagnostics": {
+    "history": "历史操作时间线（所选条目）",
+    "unreadable": "Blob 对象存在，但底层数据当前无法读取。",
+    "title": "本地资源诊断",
+    "target": "当前检查的媒体",
+    "resource": "选择加载检查资源",
+    "main": "主媒体（audioBlob，包含视频）",
+    "instrumental": "可选伴奏（instrumentalBlob）",
+    "check": "检查",
+    "load": "检查媒体加载",
+    "copy": "复制诊断报告",
+    "clear": "清除失败记录",
+    "report": "诊断报告",
+    "live": "现场检查结果",
+    "last": "上一次播放失败",
+    "notChecked": "尚未检查",
+    "noFailure": "没有保存的失败记录",
+    "copied": "报告已复制",
+    "manual": "请选中下方报告文本并手动复制。",
+    "hint": "先选择出错条目，再点击检查。exists 和 validBlob 仅表示 Blob 对象存在；head/tail 的 readable 表示首尾少量数据可读取。检查只读，不清除或改写媒体数据；没有可选伴奏不代表主媒体损坏。",
+    "caution": "对象存在、数据可读取与元数据可加载是三种不同结果。首尾部分可读不能证明完整性或编码支持。",
+    "metadataCaution": "加载检查不播放声音。元数据成功不代表完整解码或播放成功；失败或超时也不能单独证明文件已被清理。"
   }
 }

@@ -2,6 +2,42 @@
 
 更新日期：2026-10-27。以下状态以当前工作区为准。文末“横屏视频与按钮设置”是最新执行基准；历史测试记录不代表本轮重新验证。
 
+## iPhone PWA Blob 审查与取证（2026-10-27，v23）
+
+真实 iPhone 根因尚待确认。约 74.6 MB video/mp4 曾播放、首尾读取及独立元数据成功，后续大小/MIME 正常但首尾均为 NotFoundError，同时主播放器/独立元素 code=4、readyState=0、networkState=3。这证明当时底层数据不可读，不能证明编码不支持、永久删除或按钮偏好导致。没有新增依赖、迁移、清空、覆盖故障资源或自动重试。
+
+### 实际调用链
+- importService.importFiles 分类文件；视频用独立静音元素等待元数据，音频经 metadataService。主媒体 audioBlob 和 attachInstrumental 的 instrumentalBlob 直接保存原始 File，没有完整拷贝物化。临时元数据 URL 在结束/错误/超时释放。
+- songs 写入集中于 database/db.js 的 put：Songs.add（本地导入、.lmp 恢复）、Songs.update（伴奏更新）、setFavorite、incrementPlayCount、importAllRaw（JSON 恢复）。歌词单独写 lyrics。JSON 按同 ID 整条覆盖；.lmp 冲突生成新 ID。导出读取/序列化，不重写 songs，下载 URL 独立所有。
+- 收藏/计数从 DB 读整条，修改字段后 put；仅元数据变更也重写两个大 Blob。伴奏先重读 Songs.get，不直接保存传入的列表旧对象；读取与 put 仍是不同事务。update/add 接受整条对象，JSON 接受备份快照：存在并发旧快照覆盖其他更新的结构风险，尚无设备前后证据将其关联到 Blob 不可读。本轮不分库、不迁移。
+- 播放入口使用队列/列表内存对象。新增播放前 DB 读取仅留证，不等待、不替换源，保留用户激活时机。计数后更新当前内存对象，selectionRevision 防旧请求覆盖新歌；refreshCurrentSong 更新队列，仅正在使用的伴奏被替换时换源。
+- audioEngine 拥有一个 playsinline video 元素（audioEl）。loadSongIntoElement 暂停、增加源修订号、取消旧等待、释放旧 URL 并创建新 URL；切换/回滚有所有权与有界等待；终止失败清源并释放 URL。playerSheet 初始化将媒体元素放入 videoHost 一次，布局只移动按钮。独立诊断元素不调用 play，结束时移除监听、清源、load、remove、revoke。
+- 按钮设置只写 localStorage lumen.playerButtons，派发 playerbuttonschange；监听器只调整按钮可见性/父容器、菜单、布局及控件隐藏计时。字幕状态独立，无媒体 DB 写入、换源、Blob 改写、播放模式变更或 URL 释放。主题/语言写 settings，睡眠计时器控制播放；数据面板导入/清空是其他显式操作，不由按钮设置触发。本轮未触发清空。
+
+### 确定性缺陷与假设
+- 已证实：put 原先在 request.onsuccess resolve，没等 transaction.oncomplete，请求成功后事务中止仍可能报告成功。最小修复为等待 complete，并拒绝 request error、transaction error/abort；桩回归验证“请求成功尚不 resolve；随后 abort 必须 reject”。没有改变记录结构/Blob/存储方案，也未证明此缺陷是 iPhone NotFoundError 根因。
+- 已修正新增波斯语诊断文案的字面 ???，以及中文“对象存在即文件存在”的误导；区分对象存在、首尾可读取、元数据可加载。清理 LRC 设计文档 currentTime 后的问号。
+- 待设备验证：原始 File 后备数据生命周期、整条 Blob 重写、并发旧快照、平台持久化异常与故障的关系。本轮没有引用未经查证的 WebKit 行为，也未把平台外部问题认定为本项目原因。
+
+### 有界诊断
+- 复用 inspectBlob/exception/sanitize，新增 mediaTimeline：固定捕获条目 ID、开始/完成时间、会话 ID、关联 op、资源字段、File/Blob 类别、大小/MIME、首尾各最多 64 字节读取结果与异常 name/message。写前与提交后重读共用 op，覆盖导入、伴奏更新、收藏、计数、JSON 恢复。播放前/用户检查/资源读取通过 Songs.get 留证。无原始字节、内容、临时 URL、文件名或完整本地路径。
+- 不等待探测来播放或写入，不自动重试/重导入/重保存。每次探测 3 秒可记录 probeTimeout（不是 NotFoundError）；最多 12 个在途操作，未完成读取继续占槽，超限跳过，不无界排队。重启前未完成的探测可能没有记录，历史并非完整审计日志。
+- localStorage 最多 80 条资源记录、96000 个 UTF-16 code units（字符串载荷约 192 KB 上限），单字符串有界，加载前检查容量；超限淘汰最旧完成记录。存储拒绝/配额/序列化失败不影响产品，当前会话保留有界内存记录。探测成功不证明完整性。
+- “本地资源诊断”按目标 ID 显示历史；复制报告包含历史、当前检查、独立加载结果和上次播放失败。异步结果固定绑定目标；历史按开始时间排序，加载结果有时间/目标/资源字段，上次失败有 belongsToSelected。NotFoundError 提示“Blob 对象存在，但底层数据当前无法读取”。appCache=v23，新模块加入 SW。
+
+### 实际验证
+- Node 命令：`node --experimental-vm-modules --test tests/media-timeline.test.mjs tests/media-diagnostics.test.mjs tests/lrc.test.mjs tests/lmp-lyrics.test.mjs tests/lyrics-modal.test.mjs tests/import-lyrics.test.mjs tests/audio-engine.test.mjs tests/lyric-file.test.mjs tests/transfer-lyrics.test.mjs`：61/61。覆盖成功→NotFoundError、DB 读取失败、请求成功后事务中止、延迟结果目标绑定、记录数量/容量、存储拒绝、元数据清理/取消、复制成功及回退。
+- 静音 Chrome：--diagnostics 14/14、普通 107/107、--video 55/55。包括提交后重读时间线、复制报告会话/条目/op、七项按钮偏好零 songs 写事务、源/模式保留、所存媒体大小/计数/收藏保留，以及 v23 新模块缓存与离线重载。额外验证浏览器内可读→双端 NotFoundError 桩、DB 读取失败，以及真实 put 请求成功后中止事务：保存拒绝且无记录。诊断测试旧字符串等待误匹配历史 recordExists，改为等待 live.recordExists 后复跑通过，未删除断言。
+- 沙箱内 Chrome GPU 访问失败；获准沙箱外独立临时配置执行，全部保留 --mute-audio，测试播放器 muted。未执行可能可听的非静音测试。减少动态专项及真实 iPhone 本轮未复验；桌面通过不代表 iPhone 已解决。
+
+### iPhone 单变量对照流程
+1. 确认报告 appCache=v23，选择目标，检查并复制基线。已有故障条目先留报告，不覆盖导入；测试全新导入另用测试条目并记录 ID。
+2. A：导入测试条目后不播放、不改设置/收藏，检查并复制；关闭 PWA 后重启，再检查同 ID、检查主媒体加载并复制。
+3. B：从可读基线开始，只播放后关闭重启；不改按钮/收藏，再检查同 ID 并复制。
+4. C：从可读基线开始，不重启、不切收藏，只改一项按钮显示偏好；立即检查同 ID、检查加载并复制。
+5. D：从可读基线开始，不改按钮、不重启，只切一次收藏；立即检查同 ID、检查加载并复制。
+6. 每次只改变一个条件，记录系统版本、PWA/Safari、文件选择来源、目标 ID。任一失败后停止后续条件，直接复制含时间线的报告；不清空数据或重导入“验证恢复”。直到取得前后证据，真实 iPhone 根因尚待确认。
+
 ## 当前实现状态
 
 ### 已实现（代码层面）
@@ -176,3 +212,12 @@ iPhone 已反馈歌词入口无法选取 .lrc，改为 .txt 后也未出现在�
 - 排查发现 runner 允许自动播放但未静音；video.browser.html 的 WebM 包含振荡器音轨并循环播放，audio-position.browser.html 的 WAV 生成 440–2320 Hz 标记音并曾直连输出，均可能发声。与用户实际高频声的关联尚未实机确认。
 - 所有 runner 浏览器模式增加 --mute-audio；普通和视频测试媒体元素静音，定位诊断在 analyser 后通过零增益节点连接输出，保留上游 PCM/FFT 与播放状态验证。未改动产品音视频功能，未删除测试或断言。
 - 按用户要求，本轮未执行播放测试；仅通过 runner 和三个浏览器测试页面脚本的语法检查及 diff 空白检查。修改后的浏览器运行结果尚未复验，之前通过数量不作为本次静音变更的验证结果。
+
+## 本地资源诊断（2026-10-27）
+- 设置页新增“本地资源诊断”。明确显示目标标题和 ID，默认当前条目；“检查”通过 Songs.get 重新读取数据库，不依赖播放器内存。分别报告记录缺失、数据库异常、媒体类型、保存 MIME、主媒体/可选伴奏 Blob 类型和大小、首尾各最多 64 字节的读取状态及独立异常、当前源是否为 Blob URL、实际 MediaError 和状态。无伴奏不视为主媒体损坏。
+- “检查媒体加载”可选择主媒体或可选伴奏，从最新数据库记录建立临时 URL 和独立静音媒体元素，仅 preload=metadata/load，不调用 play；10 秒超时、目标切换取消与修订号防护，所有终止路径清理监听器、媒体源及 URL。检查不修改播放器、媒体记录或存储权限。
+- 音频引擎保留原有失败处理、回滚和竞态控制，额外保存最近一次失败时间、目标 ID、阶段、原异常 name/message、MediaError、readyState/networkState 和 Blob 摘要。单条有界 localStorage 记录跨重启保留，写入失败不影响播放，可清除；不保存临时 URL，不自动重试或推定编码问题。界面分开显示现场结果和上次失败，报告标明错误是否属于所选条目。
+- 复制报告含应用壳版本 v21、来源 origin、浏览器、检查时间和各项结果；复制失败提供只读可选中文本。报告不包含媒体内容、原始字节、文件标题/完整本地路径或临时 URL。中/英/波斯语说明强调：部分可读不证明完整性/编码支持；元数据成功不保证实际播放，失败/超时不能证明资源被清理。新模块加入 SW 清单。
+- 实际验证：相关 Node 测试 59/59 通过（含新增诊断与失败记录测试），覆盖记录缺失、数据库错误、无效/空 Blob、首尾部分读取失败、元数据成功/错误/超时、清理、取消/修订号和复制回退。`node tests/browser-runner.mjs --diagnostics` 静音 Chrome 8/8 通过：默认目标、最新数据库读取、真实元数据成功/损坏媒体错误、探测不调用 play、报告无 URL，以及检查期间当前播放源/状态/队列保留、播放时间继续推进。
+- `node tests/browser-runner.mjs` 静音 Chrome 104/104 通过，覆盖既有歌词/换源/定位、资源重载和 v21 离线重载。所有 runner 模式保留 --mute-audio，测试播放器也 muted。沙箱内 Chrome GPU 访问失败，使用获准的隔离临时配置在沙箱外完成浏览器验证。git diff --check 通过（仅行尾转换提示）。未执行真实 iPhone 或减少动态/视频专项复验。
+- [ ] iPhone PWA 关闭再启动后的媒体故障原因仍未确认，未标记解决。请在故障出现后进入设置，选择发生问题的条目，先“检查”，再选择主媒体并“检查媒体加载”，复制同一份含现场检查、加载结果和上次失败记录的诊断报告；如问题只涉及伴奏，另选可选伴奏检查并复制报告。不要为诊断清空网站数据或重新导入。

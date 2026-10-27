@@ -244,5 +244,28 @@
     "variant": "Vocals / instrumental",
     "subtitles": "Subtitles",
     "fullscreen": "Fullscreen / Fill page"
+  },
+  "diagnostics": {
+    "history": "Operation history (selected item)",
+    "unreadable": "The Blob object exists, but its underlying data is currently unreadable.",
+    "title": "Local resource diagnostics",
+    "target": "Selected media",
+    "resource": "Load-check resource",
+    "main": "Main media",
+    "instrumental": "Optional instrumental",
+    "check": "Check",
+    "load": "Check media loading",
+    "copy": "Copy diagnostic report",
+    "clear": "Clear failure record",
+    "report": "Diagnostic report",
+    "live": "Live inspection",
+    "last": "Last playback failure",
+    "notChecked": "Not checked",
+    "noFailure": "No saved failure",
+    "copied": "Report copied",
+    "manual": "Select the text below and copy manually.",
+    "hint": "Read-only checks. No data is cleared, imported or rewritten; no storage permission is requested. Missing optional instrumental is not main-media damage. Field names in the report are technical identifiers.",
+    "caution": "Object existence, readable data and loadable metadata are distinct results. Partial reads do not prove integrity or codec support.",
+    "metadataCaution": "Metadata loading does not play audio or prove full decoding/playback. Failure or timeout alone does not prove the file was cleared."
   }
 }

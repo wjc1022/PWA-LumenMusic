@@ -255,8 +255,8 @@ try {
   const restoredTransfer=await frame.contentWindow.eval('import("/src/services/transferService.js")');
   await restoredTransfer.importLibrary(new Blob([JSON.stringify({formatVersion:2,lyrics:[{songId:'browser-b',text:'JSON 中文 / English'}]})]));
   check((await restored.Lyrics.get('browser-b')).text==='JSON 中文 / English' && (await restored.Lyrics.get('browser-a')).text===preservedA && (await restored.Songs.all()).length===2,'JSON import overwrites target lyrics without clearing other songs');
-  const cache=await caches.open('lumen-shell-v20');
-  for(const path of ['src/services/playerPreferences.js','src/services/lyricFile.js','src/components/songResources.js','src/components/playerLyrics.js','src/lyrics/lrc.mjs']) check(!!await cache.match(new URL('../'+path,location.href)),'cached '+path);
+  const cache=await caches.open('lumen-shell-v23');
+  for(const path of ['src/services/mediaTimeline.js','src/services/mediaDiagnostics.js','src/components/mediaDiagnostics.js','src/services/playerPreferences.js','src/services/lyricFile.js','src/components/songResources.js','src/components/playerLyrics.js','src/lyrics/lrc.mjs']) check(!!await cache.match(new URL('../'+path,location.href)),'cached '+path);
   await fetch('/__offline',{method:'POST'});
   frame.contentWindow.location.reload();await wait(200);
   await until(()=>frame.contentDocument.querySelector('#page-home .song-row'),'offline reload');

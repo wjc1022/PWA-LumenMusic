@@ -17,6 +17,7 @@
  * ---------------------------------------------------------------
  */
 
+import { traceRecord, operationId } from '../services/mediaTimeline.js';
 const DB_NAME = "lumen-db";
 const DB_VERSION = 1;
 const STORES = ["songs", "playlists", "recents", "lyrics", "settings"];
@@ -79,9 +80,32 @@ async function get(storeName, key) {
   return wrap(store.get(key));
 }
 
-async function put(storeName, value) {
-  const store = await tx(storeName, "readwrite");
-  return wrap(store.put(value));
+async function put(storeName, value, operation = 'write') {
+  const op = operationId();
+  const id = value?.id;
+  if (storeName === 'songs') traceRecord(operation+'-before', value, {op});
+  try {
+    const store = await tx(storeName, "readwrite");
+    const result = await new Promise((resolve, reject) => {
+      const transaction = store.transaction;
+      let key;
+      transaction.oncomplete = () => resolve(key);
+      transaction.onabort = () => reject(transaction.error || new DOMException('Transaction aborted', 'AbortError'));
+      transaction.onerror = () => reject(transaction.error || new Error('Transaction failed'));
+      const request = store.put(value);
+      request.onsuccess = () => { key = request.result; };
+      request.onerror = () => reject(request.error);
+    });
+    if (storeName === 'songs') {
+      // Independent fresh read; diagnostic failures never turn a committed write into failure.
+      void get('songs', id).then(record=>traceRecord(operation+'-committed-read',record,{id,op}))
+        .catch(error=>traceRecord('write-read-error',null,{id,op,error}));
+    }
+    return result;
+  } catch(error) {
+    if(storeName==='songs') traceRecord('write-failed',value,{op,error});
+    throw error;
+  }
 }
 
 async function del(storeName, key) {
@@ -98,9 +122,12 @@ async function clear(storeName) {
 
 export const Songs = {
   all: () => getAll("songs"),
-  get: (id) => get("songs", id),
-  add: (song) => put("songs", song),
-  update: (song) => put("songs", song),
+  get: async (id, operation = 'record-read') => {
+    try { const record=await get('songs',id); traceRecord(operation,record,{id}); return record; }
+    catch(error) {traceRecord(operation,null,{id,error});throw error;}
+  },
+  add: (song) => put("songs", song, 'import-save'),
+  update: (song) => put("songs", song, 'resource-update'),
   remove: async (id) => {
     await del("songs", id);
     await del("lyrics", id);
@@ -110,14 +137,14 @@ export const Songs = {
     const song = await get("songs", id);
     if (!song) return;
     song.favorite = favorite;
-    await put("songs", song);
+    await put("songs", song, 'favorite');
     return song;
   },
   incrementPlayCount: async (id) => {
     const song = await get("songs", id);
     if (!song) return;
     song.playCount = (song.playCount || 0) + 1;
-    await put("songs", song);
+    await put("songs", song, 'play-count');
     return song;
   },
   clearAll: () => clear("songs"),
@@ -196,7 +223,7 @@ export async function exportAllRaw() {
 }
 
 export async function importAllRaw({ songs = [], playlists = [], recents = [], lyrics = [], settings = [] }) {
-  for (const s of songs) await put("songs", s);
+  for (const s of songs) await put("songs", s, 'backup-restore');
   for (const p of playlists) await put("playlists", p);
   for (const r of recents) await put("recents", r);
   for (const l of lyrics) {
