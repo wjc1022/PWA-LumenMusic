@@ -261,6 +261,9 @@ main{ padding:6px 16px calc(var(--mini-h) + 34px); min-height:100vh; }
 .panel-row{ display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; }
 .panel-title{ font-size:15px; font-weight:600; }
 .panel-hint{ font-size:12.5px; color:var(--text-dim); margin-top:2px; }
+.media-diagnostics > summary{ cursor:pointer; }
+.media-diagnostics > summary:focus-visible{ outline:2px solid var(--yellow-deep); outline-offset:4px; border-radius:4px; }
+.media-diagnostics-content{ margin-top:14px; }
 .about-panel p{ font-size:14.5px; line-height:1.6; color:var(--text); margin:0 0 12px; }
 .about-panel p:last-child{ margin-bottom:0; }
 .link{ font-size:14px; word-break:break-all; text-decoration:none; }
