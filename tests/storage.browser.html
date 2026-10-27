@@ -1,0 +1,67 @@
+﻿<!doctype html><meta charset="utf-8"><pre id="result">RUNNING</pre>
+<script type="module">
+const checks=[];const check=(value,label)=>{if(!value)throw Error(label);checks.push(label);};
+const request=req=>new Promise((resolve,reject)=>{req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});
+const done=tx=>new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onabort=()=>reject(tx.error);});
+const source=(await (await fetch('/src/database/db.js')).text()).replace("import { traceRecord } from '../services/mediaTimeline.js';",'const traceRecord=()=>{};').replace("'../utils/id.js'",JSON.stringify(new URL('/src/utils/id.js',location.href).href));
+async function moduleFor(name){return import(URL.createObjectURL(new Blob([source.replace('"lumen-db"',JSON.stringify(name))],{type:'text/javascript'})));}
+async function schema(name){const db=await request(indexedDB.open(name));const names=[...db.objectStoreNames].sort();db.close();return names;}
+async function row(name,store,key){const db=await request(indexedDB.open(name));const result=await request(db.transaction(store).objectStore(store).get(key));db.close();return result;}
+try{
+ Object.defineProperty(crypto,'randomUUID',{value:undefined,configurable:true});
+ const seed=indexedDB.open('storage-upgrade',1);seed.onupgradeneeded=()=>seed.result.createObjectStore('songs',{keyPath:'id'});const old=await request(seed);const seedTx=old.transaction('songs','readwrite');seedTx.objectStore('songs').put({id:'old',audioBlob:new Blob(['old'])});await done(seedTx);old.close();
+ localStorage.setItem('lumen.playerButtons','old');localStorage.setItem('unrelated','keep');
+ const db=await moduleFor('storage-upgrade');check((await db.Songs.all()).length===0,'v1 data discarded');
+ check(localStorage.getItem('lumen.playerButtons')===null&&localStorage.getItem('unrelated')==='keep','only application local preferences reset');
+ const fresh=await moduleFor('storage-fresh');await fresh.Songs.all();check(JSON.stringify(await schema('storage-fresh'))===JSON.stringify(await schema('storage-upgrade')),'fresh and upgraded structures identical');
+ check((await schema('storage-fresh')).join(',')==='lyrics,media,playlists,recents,settings,songState,songs','all seven stores present');
+ const song={id:'s',title:'Title',artist:'Artist',dateAdded:123,sourceFingerprint:'fingerprint',audioBlob:new Blob(['main'],{type:'audio/wav'}),instrumentalBlob:new Blob(['old accompaniment']),cover:'data:image/png;base64,AQID',favorite:true,playCount:3};
+ await db.Songs.add(song,'\uFEFF[00:01] 中文 / English\r\n');await db.Playlists.add({id:'p',name:'Playlist',songIds:['s']});
+ const stored=await row('storage-upgrade','songs','s');check(stored.audioMediaId.startsWith('media_')&&typeof crypto.randomUUID==='undefined','resource import works without randomUUID');check(!('audioBlob' in stored)&&!('cover' in stored)&&!('favorite' in stored),'songs contains metadata and IDs only');
+ let mediaReads=0,mediaWrites=0;const nativeGet=IDBObjectStore.prototype.get,nativeAll=IDBObjectStore.prototype.getAll,nativePut=IDBObjectStore.prototype.put;
+ IDBObjectStore.prototype.get=function(...args){if(this.name==='media')mediaReads++;return nativeGet.apply(this,args);};
+ IDBObjectStore.prototype.getAll=function(...args){if(this.name==='media')mediaReads++;return nativeAll.apply(this,args);};
+ IDBObjectStore.prototype.put=function(...args){if(this.name==='media')mediaWrites++;return nativePut.apply(this,args);};
+ await Promise.all([...Array(40)].map(()=>db.Songs.incrementPlayCount('s')));
+ await Promise.all([db.Songs.setFavorite('s',false),db.Songs.update({id:'s',artist:'Updated'})]);const list=await db.Songs.all();
+ check(list[0].playCount===43&&!list[0].favorite&&list[0].artist==='Updated','concurrent state and metadata updates retain changes');
+ check(mediaReads===0&&mediaWrites===0&&!list[0].audioBlob,'list, favorite, count and metadata never read/write media');
+ IDBObjectStore.prototype.get=nativeGet;IDBObjectStore.prototype.getAll=nativeAll;IDBObjectStore.prototype.put=nativePut;
+ const before=await db.Songs.get('s');await db.Songs.replaceResource('s','instrumentalBlob',new Blob(['replacement']));const after=await db.Songs.get('s');
+ check(after.audioMediaId===before.audioMediaId&&after.coverMediaId===before.coverMediaId&&after.instrumentalMediaId!==before.instrumentalMediaId,'replacement changes only accompaniment ID');check(!await row('storage-upgrade','media',before.instrumentalMediaId),'old accompaniment removed after commit');
+ const failWrites=async(action,storeName)=>{const put=IDBObjectStore.prototype.put,add=IDBObjectStore.prototype.add;function wrap(native){return function(...args){const req=native.apply(this,args);if(this.name===storeName){const tx=this.transaction;req.addEventListener('success',()=>tx.abort(),{once:true});}return req;};}IDBObjectStore.prototype.put=wrap(put);IDBObjectStore.prototype.add=wrap(add);let error;try{await action();}catch(e){error=e;}finally{IDBObjectStore.prototype.put=put;IDBObjectStore.prototype.add=add;}check(error?.name==='AbortError','request success then abort rejects '+storeName);};
+ await failWrites(()=>db.Songs.replaceResource('s','instrumentalBlob',new Blob(['bad'])),'songs');check((await db.Songs.get('s')).instrumentalMediaId===after.instrumentalMediaId&&await row('storage-upgrade','media',after.instrumentalMediaId),'replacement rollback retains old association/resource');
+ await failWrites(()=>db.Songs.add({...song,id:'failed'},'lyrics'),'songState');check(!await db.Songs.get('failed')&&!await db.Lyrics.get('failed'),'single-song failed import leaves no associations');
+ await failWrites(()=>db.Settings.set('test',true),'settings');check(await db.Settings.get('test')===null,'settings failure not reported successful');
+ const raw=await db.exportAllRaw();const copy=await moduleFor('storage-copy');await copy.importAllRaw(raw);const restored=await copy.Songs.withMedia('s');check(await restored.audioBlob.text()==='main'&&await restored.instrumentalBlob.text()==='replacement'&&restored.cover===song.cover&&restored.artist==='Updated'&&restored.playCount===43&&!restored.favorite&&(await copy.Lyrics.get('s')).text.includes('\r\n')&&(await copy.Playlists.get('p')).songIds[0]==='s','raw full backup roundtrip preserves all resources, metadata, state, lyrics and playlist order');
+
+ const failedRestore=await moduleFor('storage-failed-restore');await failWrites(()=>failedRestore.importAllRaw(raw),'songState');check((await failedRestore.Songs.all()).length===0&&(await failedRestore.Playlists.all()).length===0,'complete restore abort leaves neither songs nor playlists');
+ const appDb=await import('/src/database/db.js');await appDb.importAllRaw(raw);
+ const transfer=await import('/src/services/transferService.js'),lmp=await import('/src/services/lmpService.js'),zip=await import('/src/utils/zip.js');
+ let downloaded;const createURL=URL.createObjectURL,click=HTMLAnchorElement.prototype.click;
+ URL.createObjectURL=function(blob){downloaded=blob;return createURL.call(URL,blob);};HTMLAnchorElement.prototype.click=function(){};
+ const verify=async(label)=>{const restored=await appDb.Songs.withMedia('s');check(await restored.audioBlob.text()==='main'&&await restored.instrumentalBlob.text()==='replacement'&&restored.cover===song.cover&&restored.artist==='Updated'&&restored.dateAdded===123&&restored.sourceFingerprint==='fingerprint'&&restored.playCount===43&&!restored.favorite&&(await appDb.Lyrics.get('s')).text.includes('\u4e2d\u6587')&&(await appDb.Playlists.all()).some(p=>p.songIds[0]==='s'),label);};
+ await transfer.exportLibrary();const json=downloaded;await appDb.wipeDatabase();await transfer.importLibrary(json);await verify('JSON v3 complete resource, metadata, state, lyrics and playlist roundtrip');
+ let rejected=false;try{await transfer.importLibrary(new Blob([JSON.stringify({formatVersion:2,songs:[]})]));}catch(e){rejected=e.message.includes('Unsupported');}check(rejected,'JSON v2 explicitly rejected');
+ await lmp.exportPackage();const archive=downloaded;await appDb.wipeDatabase();await lmp.importPackage(archive);await verify('LMP v3 complete resource, metadata, state, lyrics and playlist roundtrip');
+ const entries=zip.readZip(await archive.arrayBuffer());const manifest=JSON.parse(new TextDecoder().decode(entries.get('manifest.json')));manifest.packageFormatVersion=2;entries.set('manifest.json',new TextEncoder().encode(JSON.stringify(manifest)));const oldArchive=zip.createZip([...entries].map(([name,data])=>({name,data})));rejected=false;try{await lmp.importPackage(oldArchive);}catch(e){rejected=e.message.includes('Unsupported');}check(rejected&&(await appDb.Songs.all()).length===1,'LMP v2 explicitly rejected without partial imports');
+ URL.createObjectURL=createURL;HTMLAnchorElement.prototype.click=click;
+ const del=IDBObjectStore.prototype.delete;IDBObjectStore.prototype.delete=function(...args){const req=del.apply(this,args);if(this.name==='songs'){const tx=this.transaction;req.addEventListener('success',()=>tx.abort());}return req;};let failed=false;try{await db.Songs.remove('s');}catch{failed=true;}finally{IDBObjectStore.prototype.delete=del;}check(failed&&await db.Songs.withMedia('s')&&(await db.Playlists.get('p')).songIds.length===1,'delete abort preserves resource and playlist relationships');
+ await db.Songs.remove('s');check(!await db.Songs.get('s')&&!await db.Lyrics.get('s')&&(await db.Playlists.get('p')).songIds.length===0,'committed delete cleans relationships');
+ const blockedSeed=indexedDB.open('storage-blocked',1);blockedSeed.onupgradeneeded=()=>blockedSeed.result.createObjectStore('old');const blocker=await request(blockedSeed);const blocked=await moduleFor('storage-blocked');let blockedError;try{await blocked.Songs.all();}catch(e){blockedError=e;}check(blockedError?.message.includes('blocked'),'blocked connection rejects initialization');blocker.close();await new Promise(r=>setTimeout(r,100));let stillFailed=false;try{await blocked.Songs.add(song);}catch{stillFailed=true;}check(stillFailed,'failed initialization cannot continue writes');const retry=await moduleFor('storage-blocked');await retry.Songs.add(song);check((await retry.Songs.all()).length===1,'explicit reload can initialize after blocker closes');
+ const bad=await import(URL.createObjectURL(new Blob([source.replace('const req = indexedDB.open(DB_NAME, DB_VERSION);',`const req=indexedDB.open('storage-failed',2);req.addEventListener('upgradeneeded',()=>req.transaction.abort());`)],{type:'text/javascript'})));let initError;try{await bad.Songs.all();}catch(e){initError=e;}check(initError?.name==='AbortError','upgrade abort rejects initialization');
+
+ localStorage.setItem('lumen.resetFailure','old');const removeLocal=Storage.prototype.removeItem;
+ Storage.prototype.removeItem=function(key){if(key==='lumen.resetFailure')throw new DOMException('denied','SecurityError');return removeLocal.call(this,key);};
+ const resetFailure=await moduleFor('storage-reset-failure');let resetError;try{await resetFailure.Songs.all();}catch(e){resetError=e;}finally{Storage.prototype.removeItem=removeLocal;}
+ check(resetError?.name==='SecurityError','local preference reset failure rejects initialization');
+ check((await row('storage-reset-failure','settings','structureResetPending'))?.value===true,'failed reset retains durable pending marker');
+ const resetRetry=await moduleFor('storage-reset-failure');await resetRetry.Songs.all();check(!localStorage.getItem('lumen.resetFailure')&&!await row('storage-reset-failure','settings','structureResetPending'),'reload completes pending reset before allowing writes');
+ const changing=await moduleFor('storage-versionchange');await changing.Songs.all();const nextVersion=await request(indexedDB.open('storage-versionchange',3));nextVersion.close();let changedError;try{await changing.Songs.add(song);}catch(e){changedError=e;}check(changedError?.message.includes('changed'),'versionchange closes connection and rejects later writes');
+ const clear=IDBObjectStore.prototype.clear;IDBObjectStore.prototype.clear=function(){const req=clear.call(this);if(this.name==='songs'){const tx=this.transaction;req.addEventListener('success',()=>tx.abort());}return req;};let clearError;try{await copy.wipeDatabase();}catch(e){clearError=e;}finally{IDBObjectStore.prototype.clear=clear;}check(clearError?.name==='AbortError'&&(await copy.Songs.all()).length===1,'clear abort rejects and restores every store');
+ const engine=await import('/src/services/audioEngine.js');engine.audioEl.muted=true;engine.setQueue(await copy.Songs.all());
+ await copy.wipeDatabase();check(engine.getQueue().length===0&&engine.getCurrentSong()===null,'wipe clears runtime queue and current song');check(!(await copy.Songs.all()).length&&(await copy.Playlists.all()).length===0,'wipe clears all application stores');
+ const text='PASS '+checks.length+' storage checks\n'+checks.join('\n');document.querySelector('#result').textContent=text;await fetch('/__result',{method:'POST',body:text});
+}catch(error){await fetch('/__result',{method:'POST',body:'FAIL '+error.stack+'\n'+checks.join('\n')});}
+</script>
+

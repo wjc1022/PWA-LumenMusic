@@ -25,23 +25,23 @@ try{
  panel.querySelectorAll('button')[1].click();await until(()=>JSON.parse(panel.querySelector('textarea').value).load?.status==='metadata-loaded');
  check(probePlay===0,'metadata probe never calls play');
  check(engine.audioEl.src===source&&!engine.audioEl.paused&&engine.audioEl.currentTime>=position&&engine.getQueue()===queue,'playing source transport and queue preserved');
- await db.Songs.update({...song,audioBlob:new w.Blob([])});panel.querySelectorAll('button')[0].click();await until(()=>JSON.parse(panel.querySelector('textarea').value).live?.audioBlob?.size===0);check(true,'check rereads latest database record');
+ await db.Songs.replaceResource(song.id,'audioBlob',new w.Blob([]));panel.querySelectorAll('button')[0].click();await until(()=>JSON.parse(panel.querySelector('textarea').value).live?.audioBlob?.size===0);check(true,'check rereads latest database record');
  const probe=await diagnostics.probeMetadata(new w.Blob(['broken'],{type:'audio/wav'}),'audio');check(probe.status==='media-error','real invalid media error');
  check(await diagnostics.copyReport('x',{})===false,'copy fallback');
  const report=panel.querySelector('textarea').value;check(!report.includes('blob:'),'report omits temporary URL');
  const history=await w.eval('import("/src/services/mediaTimeline.js")');
- await until(()=>history.timeline(song.id).some(r=>r.operation==='import-save-committed-read'));
+ await until(()=>history.timeline(song.id).some(r=>r.operation==='resource-read'));
  panel.querySelectorAll('button')[2].click();await wait(40);
  check(JSON.parse(panel.querySelector('textarea').value).history.some(r=>r.songId===song.id&&r.op&&r.sessionId),'copy report includes committed timeline and ownership');
  const preferences=await w.eval('import("/src/services/playerPreferences.js")');
  await wait(100);
- const dbBefore=await db.Songs.get(song.id),mode=[engine.isShuffleOn(),engine.getRepeatMode()];
+ const dbBefore=await db.Songs.withMedia(song.id),mode=[engine.isShuffleOn(),engine.getRepeatMode()];
  const nativeTransaction=w.IDBDatabase.prototype.transaction;let songWrites=0;
  w.IDBDatabase.prototype.transaction=function(stores,mode,...args){if(mode==='readwrite'&&[].concat(stores).includes('songs'))songWrites++;return nativeTransaction.call(this,stores,mode,...args);};
  for(const key of preferences.buttonKeys)preferences.setPlayerButtons({[key]:false});
  await wait(80);
  w.IDBDatabase.prototype.transaction=nativeTransaction;
- const dbAfter=await db.Songs.get(song.id);
+ const dbAfter=await db.Songs.withMedia(song.id);
  check(songWrites===0&&engine.audioEl.src===source&&engine.isShuffleOn()===mode[0]&&engine.getRepeatMode()===mode[1],'button settings preserve media source, modes and issue no songs write');
  check(dbAfter.audioBlob.size===dbBefore.audioBlob.size&&dbAfter.playCount===dbBefore.playCount&&dbAfter.favorite===dbBefore.favorite,'button settings preserve stored media and metadata');
  const Broken=w.eval('(class extends Blob { slice(){throw new DOMException("missing", "NotFoundError");} })');
@@ -52,10 +52,10 @@ try{
  check(true,'browser evidence preserves readable to NotFoundError transition');
  const failure=await diagnostics.inspectRecord('db-error',async()=>{throw new w.DOMException('unavailable','UnknownError');});
  check(failure.databaseError.name==='UnknownError','browser database error stays distinct');
- const nativePut=w.IDBObjectStore.prototype.put;
- w.IDBObjectStore.prototype.put=function(value,...args){const request=nativePut.call(this,value,...args);if(value.id==='diagnostic-abort'){const transaction=this.transaction;request.addEventListener('success',()=>transaction.abort(),{once:true});}return request;};
- let abortError;try{await db.Songs.add({id:'diagnostic-abort',audioBlob:blob});}catch(error){abortError=error;}finally{w.IDBObjectStore.prototype.put=nativePut;}
- check(abortError?.name==='AbortError'&&!await db.Songs.get('diagnostic-abort'),'real transaction abort after put success rejects and leaves no record');
+ const nativePut=w.IDBObjectStore.prototype.add;
+ w.IDBObjectStore.prototype.add=function(value,...args){const request=nativePut.call(this,value,...args);if(value.id==='diagnostic-abort'){const transaction=this.transaction;request.addEventListener('success',()=>transaction.abort(),{once:true});}return request;};
+ let abortError;try{await db.Songs.add({id:'diagnostic-abort',audioBlob:blob});}catch(error){abortError=error;}finally{w.IDBObjectStore.prototype.add=nativePut;}
+ check(abortError?.name==='AbortError'&&!await db.Songs.withMedia('diagnostic-abort'),'real transaction abort after put success rejects and leaves no record');
  w.HTMLMediaElement.prototype.play=original;engine.audioEl.pause();
  const text='PASS '+checks.length+' diagnostics checks\n'+checks.join('\n');document.querySelector('#result').textContent=text;await fetch('/__result',{method:'POST',body:text});
 }catch(error){await fetch('/__result',{method:'POST',body:'FAIL '+error.stack});}

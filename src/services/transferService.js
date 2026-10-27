@@ -37,7 +37,7 @@ export async function exportLibrary() {
   );
 
   const payload = {
-    formatVersion: 2,
+    formatVersion: 3,
     exportedAt: new Date().toISOString(),
     songs,
     playlists: raw.playlists,
@@ -64,22 +64,27 @@ export async function exportLibrary() {
 export async function importLibrary(file) {
   const text = await file.text();
   const payload = JSON.parse(text);
+  if(payload.formatVersion !== 3) throw new Error('Unsupported backup version. Version 3 required.');
 
+  for(const name of ['songs','playlists','recents','lyrics','settings']) if(!Array.isArray(payload[name])) throw new Error('Invalid backup: '+name);
+  const ids=new Set(payload.songs.map(s=>s.id));
+  if(ids.size!==payload.songs.length || payload.songs.some(s=>typeof s.id!=='string'||typeof s.audioBlob!=='string'||!s.audioBlob.startsWith('data:')||(s.instrumentalBlob!=null&&(typeof s.instrumentalBlob!=='string'||!s.instrumentalBlob.startsWith('data:')))))throw new Error('Invalid backup media');
+  if(payload.lyrics.some(l=>!ids.has(l.songId)||typeof l.text!=='string')||payload.playlists.some(p=>!Array.isArray(p.songIds)||p.songIds.some(id=>!ids.has(id))))throw new Error('Invalid backup relationships');
   const songs = await Promise.all(
-    (payload.songs || []).map(async (song) => ({
+    payload.songs.map(async (song) => ({
       ...song,
-      audioBlob: song.audioBlob ? await dataUrlToBlob(song.audioBlob) : null,
+      audioBlob: await dataUrlToBlob(song.audioBlob),
       instrumentalBlob: typeof song.instrumentalBlob === "string" ? await dataUrlToBlob(song.instrumentalBlob) : null,
     }))
   );
 
   await importAllRaw({
     songs,
-    playlists: payload.playlists || [],
-    recents: payload.recents || [],
-    lyrics: (payload.lyrics || []).filter(row => typeof row?.songId === "string" && typeof row.text === "string")
+    playlists: payload.playlists,
+    recents: payload.recents,
+    lyrics: payload.lyrics
       .map(({ songId, text }) => ({ songId, text })),
-    settings: payload.settings || [],
+    settings: payload.settings,
   });
 
   return { songCount: songs.length, playlistCount: (payload.playlists || []).length };

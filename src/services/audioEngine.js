@@ -153,8 +153,8 @@ export function getCurrentSong() {
 export function refreshCurrentSong(updatedSong) {
   queue = queue.map(song => song.id === updatedSong?.id ? updatedSong : song);
   if (currentSong && updatedSong && currentSong.id === updatedSong.id) {
-    const replaced = currentSong.instrumentalBlob !== updatedSong.instrumentalBlob;
-    currentSong = updatedSong;
+    const replaced = currentSong.instrumentalMediaId !== updatedSong.instrumentalMediaId || ('instrumentalBlob' in updatedSong && currentSong.instrumentalBlob !== updatedSong.instrumentalBlob);
+    currentSong = {...currentSong,...updatedSong};
     if (replaced && currentVariant === "instrumental") void switchVariant("instrumental", true);
     emit("trackchange", currentSong);
   }
@@ -212,8 +212,14 @@ export function selectSong(song, newQueue) {
 
 export async function playSong(song, newQueue, selected = false) {
   const request = ++selectionRevision;
-  // Evidence only: do not replace the selected object or delay user activation.
-  if (Songs.get) void Songs.get(song.id, 'play-before-database-read').catch(() => {});
+  if (Songs.withMedia) {
+    try { song = await Songs.withMedia(song.id); }
+    catch {
+      if (request === selectionRevision) emit('playbackerror', 'player.mediaFailed');
+      return;
+    }
+    if (request !== selectionRevision || !song) return;
+  }
   pendingRestore = null;
   if (newQueue) setQueue(newQueue);
   const idxInQueue = queue.findIndex((s) => s.id === song.id);
@@ -241,7 +247,7 @@ export async function playSong(song, newQueue, selected = false) {
 
   if (request !== selectionRevision) return;
   const updated = await Songs.incrementPlayCount(song.id);
-  if (updated && request === selectionRevision && currentSong?.id === song.id) currentSong = updated;
+  if (updated && request === selectionRevision && currentSong?.id === song.id) currentSong = {...currentSong,...updated};
   if (request === selectionRevision) await Recents.record(song.id);
 }
 
@@ -421,7 +427,7 @@ export async function switchVariant(variant, reload = false) {
 }
 
 export function hasInstrumental(song = currentSong) {
-  return song?.mediaType !== "video" && !!song?.instrumentalBlob;
+  return song?.mediaType !== "video" && !!(song?.instrumentalMediaId || song?.instrumentalBlob);
 }
 
 export function playNext() {
@@ -446,7 +452,7 @@ export function playPrev() {
 
 export async function toggleFavorite(song) {
   const updated = await Songs.setFavorite(song.id, !song.favorite);
-  if (currentSong && currentSong.id === song.id) currentSong = updated;
+  if (currentSong && currentSong.id === song.id) currentSong = {...currentSong,...updated};
   emit("favorite", updated);
   return updated;
 }
@@ -512,3 +518,22 @@ audioEl.addEventListener("ended", () => {
   playNext();
 });
 audioEl.addEventListener("timeupdate", () => emit("timeupdate", audioEl.currentTime, audioEl.duration));
+
+globalThis.addEventListener?.('lumen-data-reset', () => {
+  selectionRevision++;
+  cancelSourceWait?.();
+  pendingRestore = null;
+  pendingSeek = null;
+  activeSource = null;
+  queue = [];
+  position = 0;
+  currentSong = null;
+  lastFailure = null;
+  audioEl.pause();
+  audioEl.removeAttribute('src');
+  audioEl.load();
+  if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
+  currentObjectUrl = null;
+  emit('queuechange', queue);
+  emit('trackchange', null);
+});

@@ -7,7 +7,7 @@
  * ---------------------------------------------------------------
  */
 
-import { Songs, Lyrics } from "../database/db.js";
+import { Songs } from "../database/db.js";
 import { extractMetadata, blobToDataUrl } from "./metadataService.js";
 import { generatePlaceholderCover } from "./coverService.js";
 import { generateId } from "../utils/id.js";
@@ -75,16 +75,7 @@ export async function getExistingFingerprints() {
  */
 export async function attachInstrumental(song, file) {
   if (!isAudioFile(file)) throw new Error("Invalid audio file");
-  song = await Songs.get(song.id);
-  if (song?.mediaType === "video") throw new Error("Video has no instrumental variant");
-  if (!song) throw new Error("Song no longer exists");
-  const updated = {
-    ...song,
-    instrumentalBlob: file,
-    instrumentalMimeType: file.type || "audio/mpeg",
-  };
-  await Songs.update(updated);
-  return updated;
+  return Songs.replaceResource(song.id, 'instrumentalBlob', file, {instrumentalMimeType:file.type || 'audio/mpeg'});
 }
 
 async function withTimeout(promise, ms, fallback) {
@@ -145,8 +136,7 @@ export async function importFiles(fileList, onProgress, options = {}) {
       };
 
       stage = "storage";
-      await Songs.add(song);
-      imported.push(song);
+      let lyricText;
       const matches = lyricsFiles.get(pairingKey(file)) || [];
       if (matches.length > 1) {
         options.onLyricsWarning?.(file.name);
@@ -154,14 +144,16 @@ export async function importFiles(fileList, onProgress, options = {}) {
         try {
           const text = await withTimeout(matches[0].text(), 10000, null);
           if (text === null) throw new Error("LRC read timed out");
-          await Lyrics.save(song.id, text);
-          options.onLyricsImported?.(song);
+          lyricText = text;
         } catch (error) {
           // A failed sidecar must not discard an otherwise playable song.
           console.warn(`Could not import lyrics for "${file.name}"`, error);
           options.onLyricsWarning?.(file.name);
         }
       }
+      await Songs.add(song, lyricText);
+      imported.push(song);
+      if(lyricText !== undefined) options.onLyricsImported?.(song);
     } catch (err) {
       const code = err.importCode || (stage === "storage"
         ? (err.name === "QuotaExceededError" ? "storageFull" : "storageFailed") : "fileReadFailed");

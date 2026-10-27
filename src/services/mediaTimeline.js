@@ -14,6 +14,7 @@ function append(row) {
  } catch {} // Storage denial/quota cannot affect the product.
 }
 export function traceRecord(operation, record, {id=record?.id,op=operationId(),error}={}) {
+ const generation=resetGeneration;
  const time=new Date().toISOString();
  // Also bound in-flight probes when a broken platform leaves reads pending.
  if(pending>=12)return;
@@ -26,8 +27,11 @@ export function traceRecord(operation, record, {id=record?.id,op=operationId(),e
     let timer;
     const probe=inspectBlob(blob,field==='instrumentalBlob');probes.push(probe);
     const result=await Promise.race([probe,new Promise(resolve=>{timer=setTimeout(()=>resolve({probeTimeout:true}),3000);})]).finally(()=>clearTimeout(timer));
-    append({time,completedAt:new Date().toISOString(),sessionId,operation,songId:id,op,recordExists:!!record,field,blobClass:typeof File!=='undefined' && blob instanceof File?'File':blob instanceof Blob?'Blob':null,...result,...(error?{error:exception(error)}:{})});
+    if(generation===resetGeneration) append({time,completedAt:new Date().toISOString(),sessionId,operation,songId:id,op,recordExists:!!record,field,blobClass:typeof File!=='undefined' && blob instanceof File?'File':blob instanceof Blob?'Blob':null,...result,...(error?{error:exception(error)}:{})});
    }
   } catch {} finally {await Promise.allSettled(probes);pending--;}
  })();
 }
+
+let resetGeneration=0;
+globalThis.addEventListener?.('lumen-data-reset',()=>{rows=[];resetGeneration++;});

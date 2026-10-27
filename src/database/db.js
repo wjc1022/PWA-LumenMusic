@@ -1,26 +1,9 @@
-/**
- * database/db.js
- * ---------------------------------------------------------------
- * Thin promise-based wrapper around IndexedDB. This is the ONLY
- * module that talks to IndexedDB directly — every other module
- * goes through the functions exported here.
- *
- * Object stores:
- *   songs      keyPath: "id"      -> { id, title, artist, album, duration,
- *                                       cover (dataURL), audioBlob (Blob),
- *                                       mimeType, favorite, playCount,
- *                                       dateAdded }
- *   playlists  keyPath: "id"      -> { id, name, songIds: [], dateCreated }
- *   recents    keyPath: "id"      -> { id (=songId), playedAt }
- *   lyrics     keyPath: "songId"  -> { songId, text: string }
- *   settings   keyPath: "key"     -> { key, value }
- * ---------------------------------------------------------------
- */
-
-import { traceRecord, operationId } from '../services/mediaTimeline.js';
+import { traceRecord } from '../services/mediaTimeline.js';
+import { generateId } from '../utils/id.js';
+// v2: songs stores metadata and resource IDs; media stores separate resources; songState stores daily state.
 const DB_NAME = "lumen-db";
-const DB_VERSION = 1;
-const STORES = ["songs", "playlists", "recents", "lyrics", "settings"];
+const DB_VERSION = 2;
+const STORES = ["media", "songState", "songs", "playlists", "recents", "lyrics", "settings"];
 
 let dbPromise = null;
 
@@ -28,33 +11,56 @@ function openDb() {
   if (dbPromise) return dbPromise;
   dbPromise = new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
-
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains("songs")) {
-        const store = db.createObjectStore("songs", { keyPath: "id" });
-        store.createIndex("dateAdded", "dateAdded");
-        store.createIndex("favorite", "favorite");
-      }
-      if (!db.objectStoreNames.contains("playlists")) {
-        db.createObjectStore("playlists", { keyPath: "id" });
-      }
-      if (!db.objectStoreNames.contains("recents")) {
-        const store = db.createObjectStore("recents", { keyPath: "id" });
-        store.createIndex("playedAt", "playedAt");
-      }
-      if (!db.objectStoreNames.contains("lyrics")) {
-        db.createObjectStore("lyrics", { keyPath: "songId" });
-      }
-      if (!db.objectStoreNames.contains("settings")) {
-        db.createObjectStore("settings", { keyPath: "key" });
-      }
+    let blocked = false;
+    req.onblocked = () => {
+      blocked = true;
+      reject(new Error('Database upgrade blocked. Close other Lumen tabs and reload.'));
     };
-
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    req.onupgradeneeded = () => {
+      if (blocked) { req.transaction.abort(); return; }
+      const db = req.result;
+      for (const name of Array.from(db.objectStoreNames)) db.deleteObjectStore(name);
+      for (const name of STORES) db.createObjectStore(name, {
+        keyPath: name === 'songState' || name === 'lyrics' ? 'songId' : name === 'settings' ? 'key' : 'id',
+      });
+      // Persist until local preferences and runtime state have also been reset.
+      req.transaction.objectStore('settings').put({key: 'structureResetPending', value: true});
+    };
+    req.onerror = () => reject(req.error || new Error('Database initialization failed'));
+    req.onsuccess = async () => {
+      const db = req.result;
+      if (blocked) { db.close(); return; }
+      db.onversionchange = () => {
+        db.close();
+        dbPromise = Promise.reject(new Error('Database changed. Reload Lumen.'));
+        dbPromise.catch(() => {});
+        globalThis.dispatchEvent?.(new Event('lumen-data-reset'));
+        globalThis.dispatchEvent?.(new Event('lumen-database-invalidated'));
+      };
+      try {
+        await finishStructureReset(db);
+        resolve(db);
+      } catch (error) { db.close(); reject(error); }
+    };
   });
   return dbPromise;
+}
+
+function finishStructureReset(db) {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction('settings', 'readwrite');
+    transaction.oncomplete = resolve;
+    transaction.onabort = () => reject(transaction.error || new DOMException('Initialization aborted', 'AbortError'));
+    transaction.onerror = () => reject(transaction.error || new Error('Initialization failed'));
+    const store = transaction.objectStore('settings');
+    const request = store.get('structureResetPending');
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      if (!request.result) return;
+      try { resetLocal(); store.delete('structureResetPending'); }
+      catch (error) { transaction.abort(); reject(error); }
+    };
+  });
 }
 
 function tx(storeName, mode = "readonly") {
@@ -80,76 +86,170 @@ async function get(storeName, key) {
   return wrap(store.get(key));
 }
 
-async function put(storeName, value, operation = 'write') {
-  const op = operationId();
-  const id = value?.id;
-  if (storeName === 'songs') traceRecord(operation+'-before', value, {op});
-  try {
-    const store = await tx(storeName, "readwrite");
-    const result = await new Promise((resolve, reject) => {
-      const transaction = store.transaction;
-      let key;
-      transaction.oncomplete = () => resolve(key);
-      transaction.onabort = () => reject(transaction.error || new DOMException('Transaction aborted', 'AbortError'));
-      transaction.onerror = () => reject(transaction.error || new Error('Transaction failed'));
-      const request = store.put(value);
-      request.onsuccess = () => { key = request.result; };
-      request.onerror = () => reject(request.error);
-    });
-    if (storeName === 'songs') {
-      // Independent fresh read; diagnostic failures never turn a committed write into failure.
-      void get('songs', id).then(record=>traceRecord(operation+'-committed-read',record,{id,op}))
-        .catch(error=>traceRecord('write-read-error',null,{id,op,error}));
-    }
-    return result;
-  } catch(error) {
-    if(storeName==='songs') traceRecord('write-failed',value,{op,error});
-    throw error;
+async function put(name,value){return atomic([name],(s,r,out)=>r(s(name).put(value),out));}
+
+// Enqueue dependent requests in IDB callbacks; never await external work inside a transaction.
+async function atomic(names, action, mode = 'readwrite') {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(names, mode);
+    let result;
+    transaction.oncomplete = () => resolve(result);
+    transaction.onerror = () => reject(transaction.error || new Error('Transaction failed'));
+    transaction.onabort = () => reject(transaction.error || new DOMException('Transaction aborted', 'AbortError'));
+    const request = (req, callback) => {
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        try { callback?.(req.result); }
+        catch (error) { transaction.abort(); reject(error); }
+      };
+    };
+    try { action(name => transaction.objectStore(name), request, value => { result = value; }); }
+    catch (error) { transaction.abort(); reject(error); }
+  });
+}
+const del=(name,key)=>atomic([name],(s,r)=>r(s(name).delete(key)));
+const clear=name=>atomic([name],(s,r)=>r(s(name).clear()));
+// Broadcast only runtime invalidation; another tab must not echo or rewrite storage.
+const resetChannel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('lumen-data-reset') : null;
+if (resetChannel) resetChannel.onmessage = () => globalThis.dispatchEvent?.(new Event('lumen-data-reset'));
+function resetLocal() {
+  for (const key of Object.keys(localStorage)) {
+    if (key.startsWith('lumen.') || key.startsWith('lumen-')) localStorage.removeItem(key);
   }
+  globalThis.dispatchEvent?.(new Event('lumen-data-reset'));
+  resetChannel?.postMessage('reset');
 }
-
-async function del(storeName, key) {
-  const store = await tx(storeName, "readwrite");
-  return wrap(store.delete(key));
+const fields=['audioBlob','instrumentalBlob','cover'],refs=['audioMediaId','instrumentalMediaId','coverMediaId'];
+// All binary preparation happens before starting a write transaction.
+function split(song) {
+  const data = {...song}, media = [];
+  fields.forEach((field, i) => {
+    if (data[field] != null) {
+      const id = generateId('media');
+      data[refs[i]] = id;
+      media.push({id, kind: field, value: data[field]});
+    } else delete data[refs[i]];
+    delete data[field];
+  });
+  const state = {songId: song.id, favorite: !!song.favorite, playCount: song.playCount || 0};
+  delete data.favorite;
+  delete data.playCount;
+  delete data.songId;
+  return {data, media, state};
 }
-
-async function clear(storeName) {
-  const store = await tx(storeName, "readwrite");
-  return wrap(store.clear());
+function changeState(id, change) {
+  return atomic(['songs', 'songState'], (store, request, output) => {
+    request(store('songs').get(id), song => {
+      if (!song) return;
+      request(store('songState').get(id), old => {
+        const state = old || {songId: id, favorite: false, playCount: 0};
+        change(state);
+        request(store('songState').put(state));
+        output({...song, ...state});
+      });
+    });
+  });
 }
-
-/* ----------------------------- songs ----------------------------- */
 
 export const Songs = {
-  all: () => getAll("songs"),
-  get: async (id, operation = 'record-read') => {
-    try { const record=await get('songs',id); traceRecord(operation,record,{id}); return record; }
-    catch(error) {traceRecord(operation,null,{id,error});throw error;}
-  },
-  add: (song) => put("songs", song, 'import-save'),
-  update: (song) => put("songs", song, 'resource-update'),
-  remove: async (id) => {
-    await del("songs", id);
-    await del("lyrics", id);
-    await del("recents", id);
-  },
-  setFavorite: async (id, favorite) => {
-    const song = await get("songs", id);
-    if (!song) return;
-    song.favorite = favorite;
-    await put("songs", song, 'favorite');
-    return song;
-  },
-  incrementPlayCount: async (id) => {
-    const song = await get("songs", id);
-    if (!song) return;
-    song.playCount = (song.playCount || 0) + 1;
-    await put("songs", song, 'play-count');
-    return song;
-  },
-  clearAll: () => clear("songs"),
-};
+  all: () => atomic(['songs', 'songState'], (store, request, output) => {
+    request(store('songs').getAll(), songs => {
+      request(store('songState').getAll(), states => {
+        const map = new Map(states.map(state => [state.songId, state]));
+        output(songs.map(song => ({...song, ...map.get(song.id)})));
+      });
+    });
+  }, 'readonly'),
 
+  get: id => atomic(['songs', 'songState'], (store, request, output) => {
+    request(store('songs').get(id), song => {
+      if (song) request(store('songState').get(id), state => output({...song, ...state}));
+    });
+  }, 'readonly'),
+
+  withMedia: id => atomic(['songs', 'songState', 'media'], (store, request, output) => {
+    request(store('songs').get(id), song => {
+      if (!song) return;
+      request(store('songState').get(id), state => Object.assign(song, state));
+      refs.forEach((ref, i) => {
+        if (!song[ref]) return;
+        request(store('media').get(song[ref]), resource => {
+          if (!resource) throw new Error('Missing media resource');
+          song[fields[i]] = resource.value;
+        });
+      });
+      output(song);
+    });
+  }, 'readonly').then(song => {
+    traceRecord('resource-read', song, {id});
+    return song;
+  }),
+
+  add: async (song, text) => {
+    const {data, media, state} = split(song);
+    return atomic(['songs', 'media', 'songState', 'lyrics'], (store, request) => {
+      request(store('songs').add(data));
+      media.forEach(resource => request(store('media').add(resource)));
+      request(store('songState').add(state));
+      if (text !== undefined) request(store('lyrics').put({songId: song.id, text}));
+    });
+  },
+
+  // Callers supply only changed metadata fields, never a hydrated song snapshot.
+  update: patch => {
+    if (fields.some(field => field in patch)) throw new TypeError('Use replaceResource');
+    return atomic(['songs'], (store, request, output) => {
+      request(store('songs').get(patch.id), song => {
+        if (!song) throw new Error('Song missing');
+        const data = {...patch};
+        delete data.favorite;
+        delete data.playCount;
+        delete data.songId;
+        refs.forEach(ref => delete data[ref]);
+        const updated = {...song, ...data};
+        request(store('songs').put(updated));
+        output(updated);
+      });
+    });
+  },
+
+  replaceResource: async (id, kind, value, extra = {}) => {
+    const index = fields.indexOf(kind);
+    if (index < 0) throw new TypeError('Unknown resource');
+    const resource = {id: generateId('media'), kind, value};
+    return atomic(['songs', 'media', 'songState'], (store, request, output) => {
+      request(store('songs').get(id), song => {
+        if (!song) throw new Error('Song missing');
+        if (kind === 'instrumentalBlob' && song.mediaType === 'video') throw new Error('Video has no instrumental');
+        const old = song[refs[index]];
+        song[refs[index]] = resource.id;
+        if (kind === 'instrumentalBlob') song.instrumentalMimeType = extra.instrumentalMimeType;
+        request(store('media').add(resource));
+        request(store('songs').put(song));
+        if (old) request(store('media').delete(old));
+        request(store('songState').get(id), state => output({...song, ...state, [kind]: value}));
+      });
+    });
+  },
+
+  remove: id => atomic(['songs', 'media', 'songState', 'lyrics', 'recents', 'playlists'], (store, request) => {
+    request(store('songs').get(id), song => {
+      if (song) refs.forEach(ref => { if (song[ref]) request(store('media').delete(song[ref])); });
+      for (const name of ['songs', 'songState', 'lyrics', 'recents']) request(store(name).delete(id));
+      request(store('playlists').getAll(), rows => rows.forEach(row => {
+        row.songIds = row.songIds.filter(songId => songId !== id);
+        request(store('playlists').put(row));
+      }));
+    });
+  }),
+
+  setFavorite: (id, favorite) => changeState(id, state => { state.favorite = favorite; }),
+  incrementPlayCount: id => changeState(id, state => { state.playCount = (state.playCount || 0) + 1; }),
+  clearAll: () => atomic(['songs', 'media', 'songState', 'lyrics', 'recents', 'playlists'], (store, request) => {
+    for (const name of ['songs', 'media', 'songState', 'lyrics', 'recents', 'playlists']) request(store(name).clear());
+  }),
+};
 /* ----------------------------- playlists ----------------------------- */
 
 export const Playlists = {
@@ -187,7 +287,7 @@ export const Lyrics = {
   get: (songId) => get("lyrics", songId),
   save: (songId, text) => {
     if (typeof text !== "string") throw new TypeError("Lyrics must be raw text");
-    return put("lyrics", { songId, text });
+    return atomic(['songs','lyrics'],(store,request)=>request(store('songs').get(songId),song=>{if(!song)throw new Error('Song missing');request(store('lyrics').put({songId,text}));}));
   },
   remove: (songId) => del("lyrics", songId),
 };
@@ -210,28 +310,46 @@ export const Settings = {
 
 /* ----------------------------- bulk export / import ----------------------------- */
 
-export async function exportAllRaw() {
-  const [songs, playlists, recents, settingsRows] = await Promise.all([
-    getAll("songs"),
-    getAll("playlists"),
-    getAll("recents"),
-    getAll("settings"),
-  ]);
-  const lyrics = (await getAll("lyrics")).filter(row => typeof row.text === "string")
-    .map(({ songId, text }) => ({ songId, text }));
-  return { songs, playlists, recents, lyrics, settings: settingsRows };
-}
 
-export async function importAllRaw({ songs = [], playlists = [], recents = [], lyrics = [], settings = [] }) {
-  for (const s of songs) await put("songs", s, 'backup-restore');
-  for (const p of playlists) await put("playlists", p);
-  for (const r of recents) await put("recents", r);
-  for (const l of lyrics) {
-    if (typeof l?.songId === "string" && typeof l.text === "string") await Lyrics.save(l.songId, l.text);
-  }
-  for (const st of settings) await put("settings", st);
+// One readonly transaction gives exports a consistent relationship/resource snapshot.
+export function exportAllRaw() {
+  return atomic(STORES, (store, request, output) => {
+    const rows = {};
+    for (const name of STORES) request(store(name).getAll(), values => {
+      rows[name] = values;
+      if (Object.keys(rows).length !== STORES.length) return;
+      const media = new Map(rows.media.map(resource => [resource.id, resource.value]));
+      const states = new Map(rows.songState.map(state => [state.songId, state]));
+      const songs = rows.songs.map(song => {
+        const record = {...song, ...states.get(song.id)};
+        refs.forEach((ref, i) => {
+          if (!song[ref]) return;
+          if (!media.has(song[ref])) throw new Error('Missing media resource');
+          record[fields[i]] = media.get(song[ref]);
+        });
+        return record;
+      });
+      output({songs, playlists: rows.playlists, recents: rows.recents, lyrics: rows.lyrics, settings: rows.settings});
+    });
+  }, 'readonly');
+}
+// Complete backup restore is a single transaction, including all relationships.
+export async function importAllRaw({songs = [], playlists = [], recents = [], lyrics = [], settings = []}) {
+  const prepared = songs.map(split);
+  await atomic(STORES, (store, request) => {
+    prepared.forEach(({data, media, state}) => request(store('songs').get(data.id), old => {
+      if (old) refs.forEach(ref => { if (old[ref]) request(store('media').delete(old[ref])); });
+      request(store('songs').put(data));
+      media.forEach(resource => request(store('media').put(resource)));
+      request(store('songState').put(state));
+    }));
+    for (const [name, rows] of Object.entries({playlists, recents, lyrics, settings})) {
+      rows.forEach(row => request(store(name).put(row)));
+    }
+  });
 }
 
 export async function wipeDatabase() {
-  for (const store of STORES) await clear(store);
+  await atomic(STORES, (store, request) => STORES.forEach(name => request(store(name).clear())));
+  resetLocal();
 }

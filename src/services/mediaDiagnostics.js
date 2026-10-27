@@ -1,5 +1,5 @@
 ﻿import { Songs } from '../database/db.js';
-export const APP_CACHE = 'lumen-shell-v28';
+export const APP_CACHE = 'lumen-shell-v31';
 export const sanitize = value => String(value ?? '').replace(/blob:[^\s"<>]+|file:[^\s"<>]+|[A-Za-z]:[\\/][^\s"<>]+|\/(?:private|var|Users|home|Volumes|storage)\/[^\s"<>]+/g, '[redacted]').slice(0, 1000);
 export const exception = error => ({ name: sanitize(error?.name), message: sanitize(error?.message) });
 export function mediaState(media) {
@@ -17,7 +17,7 @@ export async function inspectBlob(blob, optional = false) {
  }
  return result;
 }
-export async function inspectRecord(id, get = Songs.get) {
+export async function inspectRecord(id, get = Songs.withMedia) {
  const result={time:new Date().toISOString(),songId:id};
  try {
   const record=await get(id, 'user-check');result.recordExists=!!record;

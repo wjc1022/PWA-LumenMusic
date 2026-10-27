@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createContext, SourceTextModule, SyntheticModule } from 'node:vm';
 
-async function setup({ videoError = false, storageError = false, metadataOnly = false } = {}) {
+async function setup({ videoError = false, storageError = false, metadataOnly = false, failSongId } = {}) {
   const songs = [], lyrics = new Map(), warnings = [], attached = [];
   let id = 0;
   const released=[];
@@ -12,7 +12,7 @@ async function setup({ videoError = false, storageError = false, metadataOnly = 
     document:{createElement:()=>({duration:7,removeAttribute(){},load(){},set src(value){queueMicrotask(()=>videoError?this.onerror():metadataOnly?this.onloadedmetadata():this.onloadeddata());}})},
   });
   const dependencies = {
-    '../database/db.js': { Songs: { add: async song => { if(storageError) throw Error("Quota exceeded"); songs.push(song); } }, Lyrics: { save: async (key, value) => lyrics.set(key, value) } },
+    '../database/db.js': { Songs: { add: async (song,text) => { if(storageError || song.id === failSongId) throw Error("Quota exceeded"); songs.push(song); if(text!==undefined)lyrics.set(song.id,text); } }, Lyrics: { save: async (key, value) => lyrics.set(key, value) } },
     './metadataService.js': { extractMetadata: async file => ({ title: 'ID3 title differs from filename', artist: 'Test', duration: 1 }), blobToDataUrl: async () => '' },
     './coverService.js': { generatePlaceholderCover: () => '' },
     '../utils/id.js': { generateId: () => `song-${++id}` },
@@ -81,4 +81,14 @@ test('metadata-only preload imports without waiting for a decoded frame',async()
 });
 test('import failures identify reading versus saving',async()=>{
  for(const [options,expected] of [[{videoError:true},'videoReadFailed'],[{storageError:true},'storageFailed']]){const h=await setup(options),failures=[];await h.api.importFiles([{name:'failed.mp4',type:'video/mp4',size:12}],null,{onError:e=>failures.push(e)});assert.equal(failures[0].code,expected);assert.equal(failures[0].fileName,'failed.mp4');assert.equal(h.songs.length,0);}
+});
+
+test('batch commits songs individually and reports partial success accurately', async () => {
+  const h = await setup({failSongId:'song-2'}), errors = [];
+  const result = await h.api.importFiles([audio('one.mp3'),audio('two.mp3'),audio('three.mp3')], undefined, {...h.options,onError:error=>errors.push(error)});
+  assert.equal(result.length,2);
+  assert.deepEqual(h.songs.map(song=>song.id),['song-1','song-3']);
+  assert.equal(errors.length,1);
+  assert.equal(errors[0].fileName,'two.mp3');
+  assert.equal(errors[0].code,'storageFailed');
 });

@@ -56,7 +56,7 @@ export function createSongResources(song, onUpdated) {
   panel.append(status);
   Promise.all([Lyrics.get(song.id), Songs.get(song.id)]).then(([lyrics, stored]) => {
     updateButton('lyrics', typeof lyrics?.text === 'string');
-    if (buttons.has('audio')) updateButton('audio', !!stored?.instrumentalBlob);
+    if (buttons.has('audio')) updateButton('audio', !!stored?.instrumentalMediaId);
     buttons.forEach(button => { button.disabled = !stored; });
   }).catch(error => {
     console.error('Resource state read failed', error);

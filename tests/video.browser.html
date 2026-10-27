@@ -25,7 +25,9 @@ frame.src='../index.html?video-reload';await new Promise(r=>frame.onload=r);awai
 w=frame.contentWindow;d=w.document;const db2=await w.eval('import("/src/database/db.js")'),engine=await w.eval('import("/src/services/audioEngine.js")');
 // The fixture contains an oscillator tone; never send its playback to speakers.
 engine.audioEl.muted=true;
-songs=await db2.Songs.all();check(songs.length===2&&songs.every(s=>s.audioBlob.size>0&&s.mediaType==='video'),'IndexedDB survives actual page reload');
+songs=await Promise.all((await db2.Songs.all()).map(s=>db2.Songs.withMedia(s.id)));check(songs.length===2&&songs.every(s=>s.audioBlob.size>0&&s.mediaType==='video'),'IndexedDB survives actual page reload');
+await until(()=>d.querySelectorAll('#page-home .song-row').length===2,'home video rows');
+check([...d.querySelectorAll('#page-home .song-row')].every(row=>row.querySelector('.media-type-badge.video')?.textContent==='Video'),'Home shows shared video classification');
 const video=songs.find(s=>s.title==='with-lyrics');await engine.selectSong(video,songs);await until(()=>engine.audioEl.readyState>=2&&!engine.audioEl.paused,'play');
 check(engine.audioEl.tagName==='VIDEO'&&d.querySelectorAll('video,audio').length===1,'one shared media element');
 await until(()=>d.querySelector('.lyric-line'),'lyrics');engine.audioEl.pause();engine.seekTo(.4);await until(()=>!engine.audioEl.seeking,'seek');check(engine.audioEl.currentTime>0.5,'seek uses video currentTime');
@@ -114,7 +116,7 @@ const audio={id:'audio-fixture',title:'Audio',audioBlob:new w.Blob([bytes],{type
 const element=engine.audioEl;await engine.selectSong(audio,[audio,bare]);check(engine.audioEl===element&&d.querySelector('#videoHost').hidden,'audio switch uses same element');
 d.querySelector('#playerSheetClose').click();await until(()=>engine.getCurrentSong().id===bare.id,'auto advance');check(!d.querySelector('#playerSheetModal').classList.contains('open'),'actual ended event advances mixed queue without expanding');
 check(d.querySelector('#sheetVariantBtn').hidden,'video has no variant UI');
-const transfer=await w.eval('import("/src/services/transferService.js")');let backup;const create=w.URL.createObjectURL.bind(w.URL);w.URL.createObjectURL=b=>{if(b.type==='application/json')backup=b;return create(b);};await transfer.exportLibrary();await transfer.importLibrary(backup);check((await db2.Songs.get(bare.id)).mediaType==='video'&&(await db2.Songs.get(bare.id)).audioBlob.size===file.size,'JSON video backup restores type and bytes');
+const transfer=await w.eval('import("/src/services/transferService.js")');let backup;const create=w.URL.createObjectURL.bind(w.URL);w.URL.createObjectURL=b=>{if(b.type==='application/json')backup=b;return create(b);};await transfer.exportLibrary();await transfer.importLibrary(backup);check((await db2.Songs.withMedia(bare.id)).mediaType==='video'&&(await db2.Songs.withMedia(bare.id)).audioBlob.size===file.size,'JSON video backup restores type and bytes');
 engine.audioEl.pause();pref.setPlayerButtons({favorite:false,fullscreen:false});
 frame.src='../index.html?buttons-reload';await new Promise(r=>frame.onload=r);await until(()=>frame.contentDocument.querySelector('#page-home .page-head'),'button reload');
 const restored=await frame.contentWindow.eval('import("/src/services/playerPreferences.js")');check(!restored.getPlayerButtons().favorite&&!restored.getPlayerButtons().fullscreen,'button preferences survive actual reload');

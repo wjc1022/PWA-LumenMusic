@@ -5,13 +5,13 @@ import {readFile} from 'node:fs/promises';
 const source=path=>readFile(new URL(path,import.meta.url),'utf8');
 test('write waits for commit and rejects abort after request success',async()=>{
  let transaction,request;
- const context=vm.createContext({Promise,DOMException,Error,indexedDB:{open(){const req={};queueMicrotask(()=>{req.result={transaction(){transaction={error:null,objectStore(){return {transaction,put(){request={result:'id'};return request;}}}};return transaction;}};req.onsuccess();});return req;}}});
- const trace=new vm.SyntheticModule(['traceRecord','operationId'],function(){this.setExport('traceRecord',()=>{});this.setExport('operationId',()=> 'op');},{context});
+ const context=vm.createContext({Promise,DOMException,Error,indexedDB:{open(){const req={};queueMicrotask(()=>{req.result={transaction(name){if(typeof name==='string'){const init={objectStore(){return {get(){const req={result:undefined};queueMicrotask(()=>{req.onsuccess();init.oncomplete();});return req;}};}};return init;}transaction={error:null,objectStore(){return {transaction,put(){request={result:'id'};return request;}}}};return transaction;}};req.onsuccess();});return req;}}});
+ const trace=new vm.SyntheticModule(['traceRecord','operationId','generateId'],function(){this.setExport('generateId',()=> 'media-test');this.setExport('traceRecord',()=>{});this.setExport('operationId',()=> 'op');},{context});
  const mod=new vm.SourceTextModule(await source('../src/database/db.js'),{context});await mod.link(()=>trace);await mod.evaluate();
- let settled=false;const first=mod.namespace.Songs.add({id:'a'}).then(()=>{settled=true;});
+ let settled=false;const first=mod.namespace.Settings.set('a',1).then(()=>{settled=true;});
  await new Promise(setImmediate);request.onsuccess();await new Promise(setImmediate);assert.equal(settled,false);
  transaction.oncomplete();await first;assert.equal(settled,true);
- const second=mod.namespace.Songs.update({id:'a'});await new Promise(setImmediate);request.onsuccess();transaction.onabort();await assert.rejects(second,{name:'AbortError'});
+ const second=mod.namespace.Settings.set('a',2);await new Promise(setImmediate);request.onsuccess();transaction.onabort();await assert.rejects(second,{name:'AbortError'});
 });
 test('timeline binds delayed results to original target and bounds storage; denial is harmless',async()=>{
  let saved='',denied=false,release;

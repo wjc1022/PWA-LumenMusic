@@ -1,6 +1,47 @@
 ﻿# KTV 播放体验改造计划
 
-更新日期：2026-10-27。以下状态以当前工作区为准。文末“横屏视频与按钮设置”是最新执行基准；历史测试记录不代表本轮重新验证。
+更新日期：2026-10-27。以本节“媒体与日常属性分离”作为最新存储执行基准；后文旧版本记录仅供追溯，历史测试数量不代表本轮结果。
+
+## 列表媒体类型统一（v31）
+
+- 原因：共享歌曲行的 showMediaType 默认关闭，只有 Library 显式开启，导致 Home 同一条目没有音频／视频标识。现改为共享组件默认显示，Home 的继续收听、收藏快捷列表、完整媒体库，以及收藏、歌单和本机库使用相同标识与样式。各页面的列表范围和操作不变，不新增媒体读取。
+- 应用壳及诊断标记更新为 v31。实际验证：AGENTS.md 指定的七个 Node 测试文件 55/55；隔离静音 Chrome 普通模式 123/123、视频模式 61/61，覆盖各页面音频标识、Home 视频标识、窄屏长标题和 v31 离线重载；git diff --check 通过。未进行真实 iPhone 或人工视觉验收。
+
+## 媒体与日常属性分离（2026-10-27，v29）
+
+### 导入保存失败回归修复（v30）
+
+- 新增资源时曾直接调用 `crypto.randomUUID()`，在该 API 不可用的环境（例如部分局域网 HTTP 访问）中，事务开始前即抛出 TypeError，被误归类为一般保存失败。改为复用 `generateId('media')` 的现有回退路径；不改变数据库版本或清空数据。
+- 应用壳和诊断标记更新为 v30。实际重新验证：相关 Node 64/64；隔离静音 Chrome 存储专项 36/36，整个专项禁用 randomUUID，覆盖媒体导入、伴奏替换和 JSON / .lmp 恢复；普通播放器及 v30 离线缓存回归 119/119。设备上原始错误尚未取得，不能仅凭通用提示断定这是唯一原因；真实 iPhone 未复验。
+
+**升级提醒：本版本将 lumen-db 升到版本 2，删除旧对象表和应用资料库，需重新导入媒体。没有旧数据迁移、转换、回退或双写。旧 JSON / .lmp 备份不能用于恢复本版本。** 不删除用户原始媒体、下载文件或备份文件。开发验证使用隔离 Chrome 临时配置与测试数据库，没有清空用户当前浏览器资料。
+
+### 最终结构与调用边界
+
+| 对象表 | 内容 |
+| --- | --- |
+| songs | id、歌曲资料、dateAdded、sourceFingerprint、mediaType / MIME、audioMediaId / instrumentalMediaId / coverMediaId；没有媒体数据、收藏或计数 |
+| media | 每份主媒体、伴奏和封面独立的 `{ id, kind, value }`；音视频为 Blob / File，封面为 data URL |
+| songState | `{ songId, favorite, playCount }` |
+| lyrics | `{ songId, text }`，一份原始文本 |
+| playlists / recents / settings | 各自资料、关系、最近播放和偏好 |
+
+- `Songs.all/get` 仅组合资料与状态；列表使用默认图标，不读取封面或其他媒体。`Songs.withMedia` 在播放和诊断时按需读取资源；资源关联与状态在同一只读事务中读取。没有含 Blob 的持久化歌曲副本。完整导出在一个只读事务中取一致快照。
+- 收藏、计数和资料更新不访问 media。计数在一个 readwrite 事务中读取最新状态、加一并写回；资料 patch 读取最新小记录，只合并指定资料字段，拒绝媒体字段，忽略状态与关联字段。
+- 单首文件导入：先读取元数据和可用歌词，再用 songs / media / songState / lyrics 原子提交。批量文件按歌曲逐条提交；已成功歌曲保留，失败条目通过现有 onError / 进度统计报告。歌词读取失败仍可导入媒体并显示歌词警告。
+- 资源替换：songs / media 同一事务建立新资源、更新单个关联并删除旧资源，其他资源不重新提交。删除：songs / media / songState / lyrics / recents / playlists 同一事务清理。所有写入、删除与清空以 transaction.oncomplete 为成功，拒绝请求错误、事务错误和中止；事务中没有文件读取、哈希或媒体加载等待。
+- JSON `formatVersion: 3` 和 .lmp `packageFormatVersion: 3`；旧版本在写入前明确拒绝。新格式完整往返媒体、伴奏、封面、歌词、歌曲资料、收藏、计数和歌单顺序。JSON 恢复和 .lmp 恢复均先完成读取 / 解码 / ID 冲突处理，再整体原子提交；提交失败不保留部分导入。资源 ID 在本库内稳定，恢复重新分配资源 ID，.lmp 同歌曲 ID 冲突仍生成新歌曲 ID 并重映射歌单关系。
+- 升级关闭本模块的旧标签连接；被其他连接阻塞时明确失败，需关闭其他标签并重载。失败的初始化 Promise 保持拒绝，不能继续写入。版本变化后关闭连接、清理运行时源与队列并提示重载。升级用 settings 中的待重置标记保证 localStorage 重置失败不会在下次启动被跳过。
+- 统一重置七张表、localStorage 的 `lumen.` / `lumen-` 应用偏好与诊断、当前运行时队列和播放源。诊断内存及在途旧探测不会重新填回已清空历史。其他来源或非应用 localStorage 键不受影响。
+- 没有 Playlist 交互改造、资料编辑界面、自定义字段或外部持续同步。应用壳与诊断版本均为 v29；没有新增运行模块、依赖或构建步骤。
+
+### 本轮实际验证与限制
+
+- `node --experimental-vm-modules --test tests/lrc.test.mjs tests/lmp-lyrics.test.mjs tests/lyrics-modal.test.mjs tests/import-lyrics.test.mjs tests/audio-engine.test.mjs tests/lyric-file.test.mjs tests/transfer-lyrics.test.mjs tests/media-diagnostics.test.mjs tests/media-timeline.test.mjs`：64/64，含逐首批量导入部分成功的准确报告。
+- 隔离静音 Chrome：普通播放器 119/119、视频 60/60、诊断 14/14。覆盖选择展开、收起、定位、切歌、伴奏替换及回滚、资源持久化、响应式和 v29 离线重载。按需读取引入异步选歌，浏览器断言等待目标媒体实际载入。
+- 新增 `node tests/browser-runner.mjs --storage`：35/35。真实 IndexedDB 验证旧版清空、新装与升级结构相同、40 次并发计数、日常更新零媒体读写、失败导入 / 替换 / 删除 / 整体恢复回滚、初始化中止与阻塞、失败后禁止写入、新 JSON / .lmp 全资源往返、旧格式拒绝、本地偏好重置失败后重试、版本变化自动关连接、清空事务回滚及运行时队列重置。
+- Chrome 在沙箱内因 GPU 权限无法启动，以上浏览器验证在获准的沙箱外独立临时配置执行，保留 `--mute-audio`，测试播放器 muted。没有播放到扬声器。
+- 未验证真实 iPhone / Safari 的用户手势播放、文件选择、缓存升级、多日持久化与 PWA 重启。拆分规避日常更新重提交媒体，不证明此前 NotFoundError 或播放停滞根因已解决，也不恢复既有不可读字节。没有用桌面结果替代 iPhone 验收。
 
 ## iPhone PWA Blob 审查与取证（2026-10-27，v23）
 

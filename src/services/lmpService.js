@@ -19,7 +19,7 @@
  */
 
 import { createZip, readZip } from "../utils/zip.js";
-import { Songs, Playlists, Lyrics, Recents, exportAllRaw } from "../database/db.js";
+import { Songs, exportAllRaw, importAllRaw } from "../database/db.js";
 import { generatePlaceholderCover } from "./coverService.js";
 import { generateId } from "../utils/id.js";
 
@@ -30,7 +30,7 @@ export class ExportCancelledError extends Error {
   }
 }
 
-const PACKAGE_FORMAT_VERSION = 2;
+const PACKAGE_FORMAT_VERSION = 3;
 
 export class LmpValidationError extends Error {
   constructor(message, details = []) {
@@ -107,7 +107,7 @@ export function validatePackage(entries) {
   }
 
   if (!manifest.packageName) warnings.push("manifest.json is missing a packageName — using a default name.");
-  if (!manifest.packageFormatVersion) warnings.push("manifest.json doesn't declare a packageFormatVersion — assuming it's compatible.");
+  if(manifest.packageFormatVersion !== 3) throw new Error('Unsupported package version. Version 3 required.');
 
   const metadataFiles = [...entries.keys()].filter((k) => k.startsWith("metadata/") && k.endsWith(".json"));
   if (!metadataFiles.length) {
@@ -207,6 +207,7 @@ export async function importPackage(file, onProgress) {
 
   const idMap = new Map(); // package song id -> final stored song id
   let imported = 0;
+  const restore={songs:[],lyrics:[],playlists:[],recents:[],settings:[]};
 
   for (let i = 0; i < validated.songs.length; i++) {
     const { metadata, hasCover, hasLyrics, hasInstrumental } = validated.songs[i];
@@ -238,7 +239,8 @@ export async function importPackage(file, onProgress) {
     const finalId = existing ? generateId("song") : metadata.id;
     idMap.set(metadata.id, finalId);
 
-    await Songs.add({
+    restore.songs.push({
+      ...metadata.properties,
       id: finalId,
       title: metadata.title,
       artist: metadata.artist,
@@ -250,16 +252,16 @@ export async function importPackage(file, onProgress) {
       mediaType: metadata.mediaType === "video" || mimeType.startsWith("video/") ? "video" : "audio",
       mimeType: metadata.mimeType || mimeType,
       ...(instrumentalBlob ? { instrumentalBlob, instrumentalMimeType } : {}),
-      favorite: false,
-      playCount: 0,
-      dateAdded: Date.now(),
+      favorite: !!metadata.favorite,
+      playCount: metadata.playCount || 0,
+      dateAdded: metadata.properties?.dateAdded || Date.now(),
     });
 
     if (hasLyrics && metadata.lyrics && entries.has(metadata.lyrics)) {
       try {
         const lyricsJson = JSON.parse(new TextDecoder().decode(entries.get(metadata.lyrics)));
         if (typeof lyricsJson.text !== "string") throw new Error("Missing lyrics text");
-        await Lyrics.save(finalId, lyricsJson.text);
+        restore.lyrics.push({songId:finalId,text:lyricsJson.text});
       } catch {
         validated.warnings.push(`"${metadata.title}": lyrics file must contain a text string and was skipped.`);
       }
@@ -275,7 +277,7 @@ export async function importPackage(file, onProgress) {
       validated.warnings.push(`Playlist "${pl.name}" had no importable songs and was skipped.`);
       continue;
     }
-    await Playlists.add({
+    restore.playlists.push({
       id: generateId("pl"),
       name: pl.name,
       songIds,
@@ -294,7 +296,7 @@ export async function importPackage(file, onProgress) {
       if (Array.isArray(history)) {
         for (const entry of history) {
           const mappedId = idMap.get(entry.songId);
-          if (mappedId) await Recents.record(mappedId);
+          if (mappedId) restore.recents.push({id:mappedId,playedAt:entry.playedAt});
         }
       }
     } catch {
@@ -302,6 +304,7 @@ export async function importPackage(file, onProgress) {
     }
   }
 
+  await importAllRaw(restore);
   return {
     songCount: imported,
     playlistCount: playlistsImported,
@@ -398,8 +401,8 @@ export async function exportPackage(options = {}, onProgress) {
     description = "",
     includeCovers = true,
     includeLyrics = true,
-    includeFavorites = false,
-    includePlayCount = false,
+    includeFavorites = true,
+    includePlayCount = true,
     includePlayHistory = false,
     includeSettings = false,
     includeMoodTags = false,
@@ -426,7 +429,8 @@ export async function exportPackage(options = {}, onProgress) {
   };
   zipEntries.push({ name: "manifest.json", data: new TextEncoder().encode(JSON.stringify(manifest, null, 2)) });
 
-  const lyricsAll = includeLyrics ? await Promise.all(allSongs.map((s) => Lyrics.get(s.id))) : [];
+  const lyricMap = new Map(raw.lyrics.map(row => [row.songId, row]));
+  const lyricsAll = includeLyrics ? allSongs.map(song => lyricMap.get(song.id)) : [];
 
   for (let i = 0; i < allSongs.length; i++) {
     if (cancelToken?.cancelled) throw new ExportCancelledError();
@@ -469,7 +473,9 @@ export async function exportPackage(options = {}, onProgress) {
       zipEntries.push({ name: instrumentalPath, data: instrumentalBytes });
     }
 
+    const {audioBlob:omitAudio,instrumentalBlob:omitInstrumental,cover:omitCover,...properties}=song;
     const metadata = {
+      properties,
       id: song.id,
       mediaType: song.mediaType || "audio",
       mimeType: song.mimeType,
@@ -497,15 +503,15 @@ export async function exportPackage(options = {}, onProgress) {
   for (const pl of relevantPlaylists) {
     const playlistJson = {
       name: pl.name,
-      description: "",
+      description: pl.description || "",
       songs: pl.songIds.filter((id) => exportedIds.has(id)),
     };
-    const safeName = pl.name.replace(/[^a-zA-Z0-9_-]+/g, "_") || generateId("playlist");
+    const safeName = String(pl.id).replace(/[^a-zA-Z0-9_-]+/g, "_") || generateId("playlist");
     zipEntries.push({ name: `playlists/${safeName}.json`, data: new TextEncoder().encode(JSON.stringify(playlistJson, null, 2)) });
   }
 
   if (includePlayHistory) {
-    const recents = (await Recents.all()).filter((r) => exportedIds.has(r.id));
+    const recents = raw.recents.filter((r) => exportedIds.has(r.id));
     zipEntries.push({
       name: "playHistory.json",
       data: new TextEncoder().encode(JSON.stringify(recents.map((r) => ({ songId: r.id, playedAt: r.playedAt })), null, 2)),

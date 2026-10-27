@@ -17,7 +17,8 @@ async function harness(originalLyrics, media = {}) {
     Songs: { get: async () => undefined, add: async value => songs.push(value) },
     Lyrics: { get: async () => originalLyrics, save: async (id, value) => savedLyrics.set(id, value) },
     Playlists: { add: async () => {} }, Recents: { record: async () => {} },
-    exportAllRaw: async () => ({ songs: [song], playlists: [], settings: [] }),
+    importAllRaw:async raw=>{songs.push(...raw.songs);raw.lyrics.forEach(l=>savedLyrics.set(l.songId,l.text));},
+    exportAllRaw: async () => ({ songs: [song], playlists: [], settings: [], recents: [], lyrics: [{songId:song.id,...originalLyrics}] }),
   };
   class TestFileReader {
     async readAsDataURL(blob) {
@@ -61,7 +62,7 @@ test('actual .lmp ZIP preserves one raw multilingual lyrics text exactly', async
   const entries=h.zip.readZip(await archive.arrayBuffer());
   const payload=JSON.parse(new TextDecoder().decode(entries.get('lyrics/song-test.json')));
   assert.deepEqual(payload,{id:'song-test',text:original});
-  assert.equal(JSON.parse(new TextDecoder().decode(entries.get('manifest.json'))).packageFormatVersion,2);
+  assert.equal(JSON.parse(new TextDecoder().decode(entries.get('manifest.json'))).packageFormatVersion,3);
   const result=await h.service.importPackage(archive);
   assert.equal(result.songCount,1);assert.equal(result.warnings.length,0);
   assert.equal(h.savedLyrics.get('song-test'),original);

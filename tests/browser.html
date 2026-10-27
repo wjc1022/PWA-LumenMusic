@@ -36,7 +36,7 @@ try {
   if(location.search.startsWith('?preview')) {
     const size=new URLSearchParams(location.search).get('preview');
     if(size) {const [width,height]=size.split('x');frame.style.width=width+'px';frame.style.height=height+'px';}
-    await engine.selectSong(await db.Songs.get('browser-a'),await db.Songs.all());
+    await engine.selectSong(await db.Songs.withMedia('browser-a'),await db.Songs.all());
     engine.audioEl.pause();result.remove();
     await new Promise(()=>{});
   }
@@ -45,7 +45,7 @@ try {
   await engine.restorePlaybackPreferences();
   check(engine.audioEl.playbackRate===1 && engine.getRepeatMode()==='all','old speed ignored and repeat preserved');
   const transfer=await w.eval('import("/src/services/transferService.js")');
-  await transfer.importLibrary(new w.File([JSON.stringify({settings:[{key:'playbackRate',value:0.5},{key:'repeatMode',value:'one'}]})],'old-backup.json'));
+  await transfer.importLibrary(new w.File([JSON.stringify({formatVersion:3,songs:[],playlists:[],recents:[],lyrics:[],settings:[{key:'playbackRate',value:0.5},{key:'repeatMode',value:'one'}]})],'old-backup.json'));
   await engine.restorePlaybackPreferences();
   check(engine.audioEl.playbackRate===1 && engine.getRepeatMode()==='one' && (await db.Songs.all()).length===2,'old backup speed ignored without clearing media or other preferences');
   await db.Settings.set('repeatMode','off');await engine.restorePlaybackPreferences();
@@ -57,6 +57,8 @@ try {
   }
   for (const page of ['library','home','favorites','playlists']) {
     await navigate(page);
+    const pageRows = [...d.querySelectorAll('#page-'+page+' .song-row')];
+    check(pageRows.length > 0 && pageRows.every(row => row.querySelector('.media-type-badge.audio')?.textContent === 'Audio'), page+' shows shared audio classification');
     d.querySelector('#page-'+page+' .song-row').click();
     await until(open,'list expands');
     check(open(), page+' selection expands');
@@ -86,12 +88,12 @@ try {
   rowB.querySelector('.song-remove-btn').click();
   check(d.querySelector('dialog[open]').textContent.includes('browser-b'),'delete confirmation names target');
   d.querySelector('dialog[open] button').click();await wait(20);
-  check(!!await db.Songs.get('browser-b') && rowB.isConnected,'cancel deletion preserves resource');
+  check(!!await db.Songs.withMedia('browser-b') && rowB.isConnected,'cancel deletion preserves resource');
   const resources = await w.eval('import("/src/components/songResources.js")');
   const videoPanel = resources.createSongResources({id:'browser-a',mediaType:'video',title:'Test'});
   check(videoPanel.querySelectorAll('button').length===1,'video has no instrumental picker');
   const rows = await w.eval('import("/src/components/songRow.js")');
-  const videoRow=rows.createSongRow({id:'test-video',title:'Long '.repeat(50),artist:'Test',mediaType:'video'}, {showMediaType:true});
+  const videoRow=rows.createSongRow({id:'test-video',title:'Long '.repeat(50),artist:'Test',mediaType:'video'});
   const card=d.querySelector('#page-library .library-song-card');card.append(videoRow);
   frame.style.width='320px';await wait(50);
   for(const theme of ['light','dark']) {
@@ -120,30 +122,36 @@ try {
   await until(()=>panel.querySelector('[role=status]').textContent.includes('failed'),'binary rejection');
   check((await db.Lyrics.get('browser-b')).text.includes('新歌词'),'invalid text keeps existing lyrics');
   panel.querySelectorAll('button')[1].click();choose(panel.querySelectorAll('input')[1],audio);
-  await until(async()=>!!(await db.Songs.get('browser-b')).instrumentalBlob,'save instrumental');
+  await until(async()=>!!(await db.Songs.withMedia('browser-b')).instrumentalBlob,'save instrumental');
   check(!engine.hasInstrumental(),'non-current instrumental does not affect current song');
   await until(()=>panel.querySelector('[role=status]').textContent==='Resource saved','resource feedback');
   check(panel.isConnected && rowB===d.querySelector('#page-library .song-row[data-id="browser-b"]'),'resource feedback and existing row retained');
   rowB.click();
+  await until(()=>engine.getCurrentSong()?.id==='browser-b' && engine.getCurrentSong()?.instrumentalBlob,'selected media loaded');
   check(engine.getCurrentSong().instrumentalBlob?.name==='test.wav' && !d.querySelector('#sheetVariantBtn').disabled,'existing library row uses newly added instrumental immediately');
   d.querySelector('#sheetVariantBtn').click();await until(()=>engine.getCurrentVariant()==='instrumental' && !engine.getVariantStatus().pending,'added instrumental plays');
   check(engine.audioEl.duration===20,'added instrumental loads from library row');
   rowA.click();
+  await until(()=>engine.getCurrentSong()?.id==='browser-a','selected media loaded');
   check(engine.getQueue().find(song=>song.id==='browser-b').instrumentalBlob?.name==='test.wav','library row queue contains added resource');
   d.querySelector('#sheetNextBtn').click();
+  await until(()=>engine.getCurrentSong()?.id==='browser-b','next media loaded');
   check(engine.getCurrentSong().id==='browser-b' && engine.hasInstrumental(),'queue next uses newly added resource');
-  d.querySelector('#sheetPrevBtn').click();engine.audioEl.pause();d.querySelector('#playerSheetClose').click();
+  d.querySelector('#sheetPrevBtn').click();await until(()=>engine.getCurrentSong()?.id==='browser-a','previous media loaded');engine.audioEl.pause();d.querySelector('#playerSheetClose').click();
   panel.querySelectorAll('button')[1].click();choose(panel.querySelectorAll('input')[1],wav(11,'replacement.wav'));
-  await until(async()=>(await db.Songs.get('browser-b')).instrumentalBlob.name==='replacement.wav','replace instrumental');
+  await until(async()=>(await db.Songs.withMedia('browser-b')).instrumentalBlob.name==='replacement.wav','replace instrumental');
   check(panel.querySelectorAll('button')[1].textContent==='Replace instrumental' && panel.querySelectorAll('button')[1].classList.contains('resource-replace'),'saved instrumental immediately uses emphasized replace action');
   check(engine.getCurrentSong().id==='browser-a','replacing non-current resource preserves current song');
   rowB.click();
+  await until(()=>engine.getCurrentSong()?.id==='browser-b' && engine.getCurrentSong()?.instrumentalBlob,'selected media loaded');
   check(engine.getCurrentSong().instrumentalBlob?.name==='replacement.wav','existing library row uses replaced instrumental immediately');
   rowA.click();
+  await until(()=>engine.getCurrentSong()?.id==='browser-a','selected media loaded');
   check(engine.getQueue().find(song=>song.id==='browser-b').instrumentalBlob?.name==='replacement.wav','same library list builds queue with replaced resource');
   d.querySelector('#sheetNextBtn').click();
+  await until(()=>engine.getCurrentSong()?.id==='browser-b','next media loaded');
   check(engine.getCurrentSong().instrumentalBlob?.name==='replacement.wav','queue next uses replaced resource');
-  d.querySelector('#sheetPrevBtn').click();d.querySelector('#sheetPrevBtn').click();
+  d.querySelector('#sheetPrevBtn').click();await until(()=>engine.getCurrentSong()?.id==='browser-a','previous A loaded');d.querySelector('#sheetPrevBtn').click();await until(()=>engine.getCurrentSong()?.id==='browser-b','previous B loaded');
   check(engine.getCurrentSong().id==='browser-b' && engine.getCurrentSong().instrumentalBlob?.name==='replacement.wav','queue previous uses replaced resource');
   await until(()=>engine.audioEl.readyState>=1,'queued B metadata');engine.audioEl.pause();
   await until(()=>engine.audioEl.readyState>=1,'B metadata');engine.audioEl.currentTime=5;
@@ -159,14 +167,14 @@ try {
   await Promise.all([pendingSwitch,reversedSwitch]);
   check(!engine.audioEl.paused && Math.abs(engine.audioEl.currentTime-3)<0.8,'rapid variant switching retains state');
   const staleSwitch=engine.switchVariant('instrumental');
-  await engine.selectSong(await db.Songs.get('browser-a'),await db.Songs.all());
+  await engine.selectSong(await db.Songs.withMedia('browser-a'),await db.Songs.all());
   await staleSwitch;check(engine.getCurrentSong().id==='browser-a' && engine.getCurrentVariant()==='vocals','stale variant restore cannot change new song');
   // Import a corrupt audio file through the real resource panel, then use the
   // real song row and player button to exercise browser decode error recovery.
   d.querySelector('#playerSheetClose').click();
   panel.querySelectorAll('button')[1].click();choose(panel.querySelectorAll('input')[1],new w.File(['not a WAV'],'broken.wav',{type:'audio/wav'}));
-  await until(async()=>(await db.Songs.get('browser-b')).instrumentalBlob.name==='broken.wav','broken audio saved');
-  rowB.click();await until(()=>engine.audioEl.readyState>=1,'original ready before failed switch');engine.audioEl.pause();engine.audioEl.currentTime=6;
+  await until(async()=>(await db.Songs.withMedia('browser-b')).instrumentalBlob.name==='broken.wav','broken audio saved');
+  rowB.click();await until(()=>engine.getCurrentSong()?.id==='browser-b','B media loaded');await until(()=>engine.audioEl.readyState>=1,'original ready before failed switch');engine.audioEl.pause();engine.audioEl.currentTime=6;
   d.querySelector('#sheetVariantBtn').click();
   await until(()=>d.querySelector('.toast-error.visible')?.textContent.includes('Previous audio restored'),'failed switch toast');
   check(engine.getCurrentVariant()==='vocals' && engine.audioEl.paused && Math.abs(engine.audioEl.currentTime-6)<0.2,'browser decode failure rolls back paused position');
@@ -175,7 +183,7 @@ try {
   check(engine.getVariantStatus().pending,'failed version can be retried');
   await until(()=>!engine.getVariantStatus().pending,'retry rollback');
   engine.audioEl.pause();
-  await engine.selectSong(await db.Songs.get('browser-a'),await db.Songs.all());engine.audioEl.pause();
+  await engine.selectSong(await db.Songs.withMedia('browser-a'),await db.Songs.all());engine.audioEl.pause();
   await until(()=>d.querySelectorAll('.lyric-line').length===2,'enhanced lyrics');engine.audioEl.currentTime=2.5;
   engine.audioEl.dispatchEvent(new w.Event('seeked'));
   check(d.querySelectorAll('.lyric-word.sung').length===2,'paused seek updates words');
@@ -231,8 +239,8 @@ try {
   frame.style.width='100%';frame.style.height='100vh';
 
   // Real media decoding with controlled loading windows, including rollback.
-  const longSong={...await db.Songs.get('browser-a'),audioBlob:wav(60),instrumentalBlob:wav(60)};
-  await db.Songs.update(longSong);await engine.selectSong(longSong);await until(()=>engine.audioEl.readyState>=1,'long audio');engine.audioEl.pause();
+  const longSong={...await db.Songs.withMedia('browser-a'),audioBlob:wav(60),instrumentalBlob:wav(60)};
+  await db.Songs.replaceResource(longSong.id,'audioBlob',longSong.audioBlob);await db.Songs.replaceResource(longSong.id,'instrumentalBlob',longSong.instrumentalBlob);await engine.selectSong(longSong);await until(()=>engine.audioEl.readyState>=1,'long audio');engine.audioEl.pause();
   const media=engine.audioEl,nativeLoad=media.load.bind(media);
   const track=d.querySelector('#sheetProgressTrack');
   // Synthetic pointer delivery exercises app handlers; native pointer capture
@@ -276,21 +284,21 @@ try {
   await library.renderLibrary(testLibrary,{onImportRequested:()=>{},onSongRemoved:s=>db.Songs.remove(s.id)});
   testLibrary.querySelector('[data-id="delete-test"] .song-remove-btn').click();
   d.querySelector('dialog[open] button:last-child').click();
-  await until(async()=>!await db.Songs.get('delete-test'),'confirmed delete');
-  check(!await db.Songs.get('delete-test'),'confirmed delete uses existing removal');testLibrary.remove();
+  await until(async()=>!await db.Songs.withMedia('delete-test'),'confirmed delete');
+  check(!await db.Songs.withMedia('delete-test'),'confirmed delete uses existing removal');testLibrary.remove();
   // Reload the actual app and read the persisted resources in its new realm.
   frame.contentWindow.location.reload();await wait(300);
   await until(()=>frame.contentDocument.querySelector('#page-home .page-head'),'reload');
   const restored=await frame.contentWindow.eval('import("/src/database/db.js")');
   const restoredEngine=await frame.contentWindow.eval('import("/src/services/audioEngine.js")');
   check(restoredEngine.audioEl.playbackRate===1 && await restored.Settings.get('playbackRate')===0.5,'startup ignores imported speed setting after reload');
-  check((await restored.Lyrics.get('browser-b')).text.includes('新歌词') && !!(await restored.Songs.get('browser-b')).instrumentalBlob,'resources persist across reload');
+  check((await restored.Lyrics.get('browser-b')).text.includes('新歌词') && !!(await restored.Songs.withMedia('browser-b')).instrumentalBlob,'resources persist across reload');
   await until(()=>frame.contentWindow.navigator.serviceWorker.controller,'service worker control');
   const preservedA=(await restored.Lyrics.get('browser-a')).text;
   const restoredTransfer=await frame.contentWindow.eval('import("/src/services/transferService.js")');
-  await restoredTransfer.importLibrary(new Blob([JSON.stringify({formatVersion:2,lyrics:[{songId:'browser-b',text:'JSON 中文 / English'}]})]));
+  await restoredTransfer.importLibrary(new Blob([JSON.stringify({formatVersion:3,songs:[{id:'browser-b',audioBlob:'data:audio/wav;base64,'+btoa(Array.from(new Uint8Array(await (await restored.Songs.withMedia('browser-b')).audioBlob.arrayBuffer()),byte=>String.fromCharCode(byte)).join(''))}],playlists:[],recents:[],settings:[],lyrics:[{songId:'browser-b',text:'JSON 中文 / English'}]})]));
   check((await restored.Lyrics.get('browser-b')).text==='JSON 中文 / English' && (await restored.Lyrics.get('browser-a')).text===preservedA && (await restored.Songs.all()).length===2,'JSON import overwrites target lyrics without clearing other songs');
-  const cache=await caches.open('lumen-shell-v28');
+  const cache=await caches.open('lumen-shell-v31');
   for(const path of ['src/services/mediaTimeline.js','src/services/mediaDiagnostics.js','src/components/mediaDiagnostics.js','src/services/playerPreferences.js','src/services/lyricFile.js','src/components/songResources.js','src/components/playerLyrics.js','src/lyrics/lrc.mjs']) check(!!await cache.match(new URL('../'+path,location.href)),'cached '+path);
   await fetch('/__offline',{method:'POST'});
   frame.contentWindow.location.reload();await wait(200);

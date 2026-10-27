@@ -38,7 +38,7 @@ export function buildMediaDiagnostics() {
   const revision=gate.next(),id=select.value,key=variant.value;controller?.abort();controller=new AbortController();
   const signal=controller.signal;load={status:'checking',resource:key};update();
   try {
-   const record=await Songs.get(id);
+   const record=await Songs.withMedia(id);
    if(!gate.current(revision)||!panel.isConnected)return;
    const result=record?await probeMetadata(record[key],record.mediaType,{signal}):{status:'missing-record'};
    if(!gate.current(revision)||!panel.isConnected)return;

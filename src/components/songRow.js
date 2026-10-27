@@ -13,7 +13,7 @@ import { t, getLang } from "../services/i18nService.js";
 
 export function createSongRow(song, {
   isPlaying = false,
-  showMediaType = false,
+  showMediaType = true,
   onPlay,
   onToggleFavorite,
   onRemove,
