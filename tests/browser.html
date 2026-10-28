@@ -27,6 +27,8 @@ try {
     await brandingI18n.setLanguage(lang);
     const panel = d.createElement('section');
     about.renderAbout(panel);
+    const sourceLink = panel.querySelector('a');
+    check(sourceLink.href === 'https://github.com/wjc1022/PrivateKara' && sourceLink.textContent === 'github.com/wjc1022/PrivateKara' && sourceLink.target === '_blank' && sourceLink.rel === 'noopener', lang+' source link points to PrivateKara safely');
     check(brandingI18n.t('app.name') === 'PrivateKara' && panel.textContent.includes('PrivateKara'), lang+' application branding');
     check(panel.textContent.includes('Junchao Wen') && panel.textContent.includes('PWA-LumenMusic') && panel.textContent.includes('Behnood Shafiei') && panel.textContent.includes('MIT'), lang+' maintainer, upstream and license attribution');
     check(d.documentElement.dir === (lang === 'fa' ? 'rtl' : 'ltr'), lang+' language direction preserved');
@@ -335,7 +337,7 @@ try {
   const restoredTransfer=await frame.contentWindow.eval('import("/src/services/transferService.js")');
   await restoredTransfer.importLibrary(new Blob([JSON.stringify({formatVersion:3,songs:[{id:'browser-b',audioBlob:'data:audio/wav;base64,'+btoa(Array.from(new Uint8Array(await (await restored.Songs.withMedia('browser-b')).audioBlob.arrayBuffer()),byte=>String.fromCharCode(byte)).join(''))}],playlists:[],recents:[],settings:[],lyrics:[{songId:'browser-b',text:'JSON 中文 / English'}]})]));
   check((await restored.Lyrics.get('browser-b')).text==='JSON 中文 / English' && (await restored.Lyrics.get('browser-a')).text===preservedA && (await restored.Songs.all()).length===2,'JSON import overwrites target lyrics without clearing other songs');
-  const cache=await caches.open('lumen-shell-v35');
+  const cache=await caches.open('lumen-shell-v36');
   for(const path of ['src/services/mediaTimeline.js','src/services/mediaDiagnostics.js','src/components/mediaDiagnostics.js','src/services/playerPreferences.js','src/services/lyricFile.js','src/components/songResources.js','src/components/playerLyrics.js','src/lyrics/lrc.mjs']) check(!!await cache.match(new URL('../'+path,location.href)),'cached '+path);
   await fetch('/__offline',{method:'POST'});
   frame.contentWindow.location.reload();await wait(200);

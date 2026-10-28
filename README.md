@@ -27,7 +27,14 @@ Recent items and play counts exist locally, but they are basic selection records
 
 The app uses plain HTML, CSS, and JavaScript ES modules. There are no npm dependencies or build steps.
 
-From this repository directory, with Python 3 installed:
+Repository: [wjc1022/PrivateKara](https://github.com/wjc1022/PrivateKara). See the [rename verification record](./docs/REPOSITORY_RENAME.md) for completed checks and remaining deployment validation.
+
+Clone and enter the repository, then start the server with Python 3:
+
+```sh
+git clone https://github.com/wjc1022/PrivateKara.git
+cd PrivateKara
+```
 
 ```sh
 python -m http.server 8080
