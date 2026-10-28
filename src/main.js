@@ -109,6 +109,6 @@ async function boot() {
   }).catch(() => {});
 }
 
-boot().catch(error=>{console.error(error);document.body.textContent='Lumen initialization failed: '+error.message;});
+boot().catch(error=>{console.error(error);document.body.textContent='PrivateKara initialization failed: '+error.message;});
 
-window.addEventListener('lumen-database-invalidated',()=>{document.body.textContent='Lumen database changed in another tab. Reload this page.';});
+window.addEventListener('lumen-database-invalidated',()=>{document.body.textContent='PrivateKara database changed in another tab. Reload this page.';});

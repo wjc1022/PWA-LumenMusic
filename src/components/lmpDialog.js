@@ -54,7 +54,7 @@ function setLocked(locked) {
  * Resolves with the options object exportPackage() expects, or
  * `null` if the user cancels.
  */
-export async function showExportWizard({ defaultName = "My Lumen Library" } = {}) {
+export async function showExportWizard({ defaultName = "My PrivateKara Library" } = {}) {
   ensureModal();
   setLocked(true); // only Cancel/Export buttons should close this — see note below
   sheetEl.classList.add("wizard");

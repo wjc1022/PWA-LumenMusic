@@ -16,6 +16,22 @@ function check(value, label) { if (!value) throw new Error(label); checks.push(l
 try {
   await until(() => frame.contentDocument.querySelector('#page-home .page-head'), 'boot');
   const w = frame.contentWindow, d = w.document;
+  check(d.title === 'PrivateKara — Bring Your Own Media Karaoke PWA', 'PrivateKara document title');
+  check(d.querySelector('.brand-name').textContent === 'PrivateKara' && d.querySelector('.side-app-name').textContent === 'PrivateKara', 'PrivateKara navigation branding');
+  check(d.querySelector('[name="apple-mobile-web-app-title"]').content === 'PrivateKara', 'PrivateKara iOS install label');
+  const manifest = await (await w.fetch('/manifest.json')).json();
+  check(manifest.name === 'PrivateKara' && manifest.short_name === 'PrivateKara', 'PrivateKara manifest names');
+  const brandingI18n = await w.eval('import("/src/services/i18nService.js")');
+  const about = await w.eval('import("/src/pages/about.js")');
+  for (const lang of ['en', 'zh-CN', 'fa']) {
+    await brandingI18n.setLanguage(lang);
+    const panel = d.createElement('section');
+    about.renderAbout(panel);
+    check(brandingI18n.t('app.name') === 'PrivateKara' && panel.textContent.includes('PrivateKara'), lang+' application branding');
+    check(panel.textContent.includes('Junchao Wen') && panel.textContent.includes('PWA-LumenMusic') && panel.textContent.includes('Behnood Shafiei') && panel.textContent.includes('MIT'), lang+' maintainer, upstream and license attribution');
+    check(d.documentElement.dir === (lang === 'fa' ? 'rtl' : 'ltr'), lang+' language direction preserved');
+  }
+  await brandingI18n.setLanguage('en');
   const db = await w.eval('import("/src/database/db.js")');
   const engine = await w.eval('import("/src/services/audioEngine.js")');
   // Also silence direct/manual test-page use (outside the muted runner).
@@ -319,7 +335,7 @@ try {
   const restoredTransfer=await frame.contentWindow.eval('import("/src/services/transferService.js")');
   await restoredTransfer.importLibrary(new Blob([JSON.stringify({formatVersion:3,songs:[{id:'browser-b',audioBlob:'data:audio/wav;base64,'+btoa(Array.from(new Uint8Array(await (await restored.Songs.withMedia('browser-b')).audioBlob.arrayBuffer()),byte=>String.fromCharCode(byte)).join(''))}],playlists:[],recents:[],settings:[],lyrics:[{songId:'browser-b',text:'JSON 中文 / English'}]})]));
   check((await restored.Lyrics.get('browser-b')).text==='JSON 中文 / English' && (await restored.Lyrics.get('browser-a')).text===preservedA && (await restored.Songs.all()).length===2,'JSON import overwrites target lyrics without clearing other songs');
-  const cache=await caches.open('lumen-shell-v34');
+  const cache=await caches.open('lumen-shell-v35');
   for(const path of ['src/services/mediaTimeline.js','src/services/mediaDiagnostics.js','src/components/mediaDiagnostics.js','src/services/playerPreferences.js','src/services/lyricFile.js','src/components/songResources.js','src/components/playerLyrics.js','src/lyrics/lrc.mjs']) check(!!await cache.match(new URL('../'+path,location.href)),'cached '+path);
   await fetch('/__offline',{method:'POST'});
   frame.contentWindow.location.reload();await wait(200);

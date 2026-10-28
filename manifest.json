@@ -1,7 +1,7 @@
 {
-  "name": "Lumen — Music Player",
-  "short_name": "Lumen",
-  "description": "An open-source, offline-first music player PWA template with bilingual lyrics. No bundled music — import your own.",
+  "name": "PrivateKara",
+  "short_name": "PrivateKara",
+  "description": "PrivateKara — Bring Your Own Media Karaoke PWA. Play user-prepared songs, music videos, instrumentals, and synchronized lyrics in physical karaoke venues.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

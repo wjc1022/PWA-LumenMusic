@@ -35,7 +35,7 @@ python -m http.server 8080
 
 Open `http://localhost:8080`. Use a static HTTPS host for phone access and PWA testing; a phone's `localhost` refers to the phone itself. Opening `index.html` through `file://` is not supported. Service workers and other secure-context APIs require HTTPS or a trusted localhost origin.
 
-On iPhone, open the HTTPS site in Safari and use **Share → Add to Home Screen** to try the installed PWA. Some app labels and the install name still say **Lumen**; the README identity has changed ahead of the application branding.
+On iPhone, open the HTTPS site in Safari and use **Share → Add to Home Screen** to try the installed PWA. The application labels and PWA install name use **PrivateKara**.
 
 ## Basic use at a venue
 

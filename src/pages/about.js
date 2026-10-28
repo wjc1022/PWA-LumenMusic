@@ -43,8 +43,9 @@ export function renderAbout(container) {
   }, "github.com/Behnooddev");
 
   container.appendChild(el("div", { class: "panel glass" }, [
-    el("div", { class: "panel-title" }, "Created by"),
-    el("p", { class: "panel-hint", style: "margin-bottom:6px;" }, "Behnood Shafiei"),
+    el("div", { class: "panel-title" }, t("about.maintainer")),
+    el("p", { class: "panel-hint", style: "margin-bottom:6px;" }, "Junchao Wen"),
+    el("p", { class: "panel-hint" }, t("about.upstream")),
     authorLink,
   ]));
 

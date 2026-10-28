@@ -396,7 +396,7 @@ export function formatBytes(bytes) {
  */
 export async function exportPackage(options = {}, onProgress) {
   const {
-    packageName = "My Lumen Library",
+    packageName = "My PrivateKara Library",
     author = "",
     description = "",
     includeCovers = true,
