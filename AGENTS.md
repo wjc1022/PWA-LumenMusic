@@ -1,36 +1,56 @@
-﻿# Agent 工作约定
+﻿# PrivateKara agent guide
 
-## 项目约束
-- 开发对象是本目录 Lumen；../karaoke-stage 仅为只读实现参考。
-- 修改前阅读 docs/KTV_PLAN.md 和 docs/LRC_DESIGN.md，以实际工作区和本轮验证确定完成状态。
-- 保持原生 HTML/CSS/JavaScript，无框架、无新增依赖、无构建步骤，使用静态 HTTP 服务。
-- 导入媒体和歌词保持本地；云接入不在本轮范围内。
-- 先检查实际代码与工作区改动，保留用户已有修改。
+## Scope and source of truth
 
-## 已确认要求
-- 合并完整播放器与歌词面板，移除大封面，在歌名上方直接显示同步歌词。
-- 无歌词只显示“暂无歌词”，播放器没有添加、更换或导入资源入口。
-- 歌词及伴奏的添加、更换放在音乐库，绑定明确目标歌曲。
-- 移除歌词手动编辑页面和倍速界面；保留已有纯文本歌词读取能力。
-- 从歌曲列表主动选歌时自动展开；收起后的迷你条操作与自动连播不强制展开。
-- 保留进度、播放控制、随机、循环、收藏、队列及原唱／伴奏切换。
-- 手机适配安全区域；桌面扩大歌词和播放空间，不沿用明显偏窄的手机卡片。
+PrivateKara is a local-first, bring-your-own-media karaoke PWA for phone playback and venue screen mirroring. It does not supply or generate media or lyrics. Cloud access and record persistence remain future work; do not assume a backend or account system.
 
-## 数据与运行
-- 每首歌只保存一份原始歌词文本：lyrics store 的记录为 { songId, text }，Lyrics.save(songId, text) 覆盖该歌曲的歌词。
-- 不保留 EN/FA 分栏设计，不做旧歌词结构兼容、回退或迁移；不主动清空音乐库或其他媒体数据。
-- 旧“保留纯文本编辑”要求被新需求替代：保留数据及显示，不保留编辑页面。
-- 歌词支持任意语言及双语混排；界面语言只影响文案，不选择或转换歌词。
-- .lmp v2 歌词文件为 { id, text }；JSON v2 备份歌词为 { songId, text }。原始文本、逐字标签与空白原样往返，不导出语言分栏或派生行数组。
-- audio.currentTime 是唯一歌词时钟，不累计独立时间。
-- 异步读取防止旧歌曲结果覆盖新状态；音频版本切换保留位置与播放状态。
-- 新运行时模块加入 sw.js，发布应用壳变更时更新缓存版本。
-- 不主动委派子 Agent，除非用户明确要求；获授权后按互不重叠职责分工，由主 Agent 集成。
+Read the agreed Issue, [README.md](README.md), [roadmap](docs/ROADMAP.md), relevant source/tests, and the [AI workflow](docs/AI_WORKFLOW.md). Verify technical details against current implementation; historical notes and legacy specifications may be stale.
 
-## 验证
-- 解析器：node --test tests/lrc.test.mjs
-- 现有相关测试：node --experimental-vm-modules --test tests/lrc.test.mjs tests/lmp-lyrics.test.mjs tests/lyrics-modal.test.mjs tests/import-lyrics.test.mjs tests/audio-engine.test.mjs tests/lyric-file.test.mjs tests/transfer-lyrics.test.mjs
-- 根据统一播放器结构更新旧 modal 测试，保留同步、竞争、单份歌词覆盖及新结构打包往返覆盖。
-- 验证选歌展开、收起、暂停定位、切歌、资源管理、持久化、响应式和离线行为。
-- 桩测试不替代浏览器，桌面测试不证明真实 iPhone 文件选择兼容。
-- 汇报实际检查与未验证项，不沿用历史测试通过数量。
+## Architecture and constraints
+
+- Keep native HTML/CSS/JavaScript ES modules: no framework, new dependencies, or build step. Serve locally with `python -m http.server 8080`; use HTTPS for phone/PWA testing, not `file://`.
+- `index.html` and `src/main.js` define the shell and router; `src/pages/` contains views, `src/components/` shared UI, and `src/styles/main.css` styles.
+- `src/services/audioEngine.js` owns playback. Player UI is in `src/components/miniPlayer.js`, `playerSheet.js`, and `playerLyrics.js`. Lyrics follow active media `currentTime`; protect asynchronous song changes against stale results.
+- `src/database/db.js` owns library storage. Import/backup services are in `src/services/importService.js`, `lyricFile.js`, `transferService.js`, and `lmpService.js`. `src/lyrics/lrc.mjs` already parses Enhanced LRC word tags.
+- Localize UI through `src/locales/en.json`, `zh-CN.json`, and `fa.json`; respect Persian RTL. Lyric language is independent of UI language.
+- `sw.js` caches the app shell. Inspect resource coverage and cache lifecycle for runtime shell changes; documentation-only work does not require a cache bump.
+
+## Data and compatibility
+
+- Preserve persistent identifiers, including `lumen-db`, existing storage keys/events, and the Lumen Music Package name. Branding does not authorize renaming or migrating data.
+- Current IndexedDB is `lumen-db` version 2: song metadata/resource IDs, separate `media` and `songState`, plus playlists, recents, lyrics, and settings. The existing upgrade recreates stores and clears prior app data. Do not extend destructive resets without agreed scope and a compatibility plan.
+- JSON backups use `formatVersion: 3`; `.lmp` manifests use `packageFormatVersion: 3`. Both importers reject older versions. Inspect import and export together before format changes.
+- Each song has one raw lyric text: database/JSON `{ songId, text }`, package lyric file `{ id, text }`. Preserve whitespace, multilingual text, and word tags through round trips; do not export derived display lines or language columns.
+- Browser storage is not a backup. Preserve user resources and failure evidence; do not mask persistence failures by clearing data or reimporting.
+
+## Working and documentation rules
+
+- Inspect status and diffs first; preserve existing work. Fetch latest `origin/main` and branch from it for new Issues, or safely continue an existing PR branch. Do not overwrite unrelated changes, force-push, or commit directly to main.
+- Stay within the Issue's acceptance criteria; raise scope changes explicitly. Do not delegate to sub-agents unless the user explicitly requests it.
+- Keep this guide in English; preserve each document's language and maintain paired English/Chinese docs when both are affected. Use UTF-8. Distinguish implementation, plans, and historical evidence; keep durable guidance concise.
+- Preserve upstream attribution to Behnood Shafiei / PWA-LumenMusic and all MIT notices in [LICENSE](LICENSE), including Lumen contributors and Junchao Wen.
+- Commit/push and open/update a Draft PR referencing the Issue. Codex must not merge or close Issues; follow the workflow's explicit user approval gates.
+
+## Verification and reporting
+
+Run from the repository root with Node.js; no npm install is needed:
+
+```sh
+node --test tests/lrc.test.mjs
+node --experimental-vm-modules --test tests/*.test.mjs
+```
+
+For PowerShell, expand the test paths explicitly (Node may receive a literal wildcard):
+
+```powershell
+$testFiles = (Get-ChildItem tests/*.test.mjs).FullName
+node --experimental-vm-modules --test $testFiles
+```
+
+The full suite uses experimental VM modules for source-module harnesses. Optional desktop Chromium checks use `node tests/browser-runner.mjs`; modes include `--storage`, `--diagnostics`, `--video`, and `--stable-audio`. Set `CHROME_PATH` if Chrome is not at the runner's default Windows path. Inspect fixture/environment requirements before running.
+
+Choose checks proportional to the change. Documentation requires `git diff --check`, local link/path checks, and source verification of technical claims. Runtime changes need relevant automated/browser checks. Report actual commands, outcomes, failures, and skipped checks; do not reuse historical pass counts.
+
+Real iOS Safari and installed-PWA validation remains necessary for file selection, restart persistence, audible output, sustained playback, instrumental switching, wake lock, touch/safe areas, fullscreen/orientation, and mirroring. Playback is foreground-oriented; native video fullscreen cannot show custom HTML lyrics. Desktop harnesses, metadata loading, or advancing time do not prove iPhone reliability.
+
+Report completion in Chinese with changed files, decisions, actual checks/results, limitations/unknowns, and PR URL. Separate source inspection, automated checks, browser checks, and real-device evidence. Never claim checks you did not run.
