@@ -144,7 +144,7 @@ function buildLmpPanel() {
   const exportBtn = el("button", { class: "btn primary data-btn" }, t("lmp.exportAction"));
   exportBtn.addEventListener("click", async () => {
     const options = await lmpDialog.showExportWizard({
-      defaultName: `My Lumen Library — ${new Date().toISOString().slice(0, 10)}`,
+      defaultName: `My PrivateKara Library — ${new Date().toISOString().slice(0, 10)}`,
     });
     if (!options) return;
 

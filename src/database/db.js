@@ -14,7 +14,7 @@ function openDb() {
     let blocked = false;
     req.onblocked = () => {
       blocked = true;
-      reject(new Error('Database upgrade blocked. Close other Lumen tabs and reload.'));
+      reject(new Error('Database upgrade blocked. Close other PrivateKara tabs and reload.'));
     };
     req.onupgradeneeded = () => {
       if (blocked) { req.transaction.abort(); return; }
@@ -32,7 +32,7 @@ function openDb() {
       if (blocked) { db.close(); return; }
       db.onversionchange = () => {
         db.close();
-        dbPromise = Promise.reject(new Error('Database changed. Reload Lumen.'));
+        dbPromise = Promise.reject(new Error('Database changed. Reload PrivateKara.'));
         dbPromise.catch(() => {});
         globalThis.dispatchEvent?.(new Event('lumen-data-reset'));
         globalThis.dispatchEvent?.(new Event('lumen-database-invalidated'));

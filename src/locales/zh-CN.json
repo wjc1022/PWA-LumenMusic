@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "Lumen",
+    "name": "PrivateKara",
     "tagline": "随心聆听，让音乐发光"
   },
   "nav": {
@@ -59,7 +59,7 @@
   },
   "settings": {
     "title": "设置",
-    "subtitle": "打造你的 Lumen。",
+    "subtitle": "打造你的 PrivateKara。",
     "theme": "主题",
     "themeHint": "选择深色、浅色或跟随系统",
     "themeDark": "深色",
@@ -87,10 +87,12 @@
     "resetPlayerButtons": "恢复默认显示"
   },
   "about": {
+    "upstreamAttribution": "基于 Behnood Shafiei 原创的 PWA-LumenMusic。",
+    "developedAndMaintainedBy": "开发与维护",
     "title": "关于",
-    "subtitle": "音乐与微光的故事。",
-    "description1": "Lumen 是一款离线优先的开源音乐播放器模板，以柔和的黄色光晕搭配深色界面，适用于 iPhone 和桌面设备。",
-    "description2": "应用不附带音乐。导入歌曲后，会自动读取标题、歌手、专辑和封面。音乐库、歌单、收藏和设置均保存在本机。",
+    "subtitle": "PrivateKara — 自备媒体卡拉 OK PWA",
+    "description1": "播放用户自行准备的歌曲、MV、伴奏和同步歌词，主要面向在实体卡拉 OK 场所使用 iPhone 的场景。",
+    "description2": "请自行准备媒体。音乐库、歌单、收藏和设置均保存在此设备上。",
     "architectureTitle": "技术架构",
     "architectureBody": "使用原生 HTML、CSS 和 JavaScript，无框架、无构建步骤、无后端。通过 IndexedDB 存储数据，媒体元素直接输出声音，Service Worker 提供离线支持。",
     "source": "源代码",
@@ -229,7 +231,7 @@
   },
   "phoneMusic": {
     "title": "本机音乐",
-    "subtitle": "浏览本机中尚未加入 Lumen 音乐库的歌曲。",
+    "subtitle": "浏览本机中尚未加入 PrivateKara 音乐库的歌曲。",
     "chooseFolder": "选择文件夹",
     "scanHint": "选择文件夹以扫描音频文件。",
     "scanning": "正在扫描……",

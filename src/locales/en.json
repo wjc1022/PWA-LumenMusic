@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "Lumen",
+    "name": "PrivateKara",
     "tagline": "your glow, your sound"
   },
   "nav": {
@@ -59,7 +59,7 @@
   },
   "settings": {
     "title": "Settings",
-    "subtitle": "Make Lumen yours.",
+    "subtitle": "Make PrivateKara yours.",
     "theme": "Theme",
     "themeHint": "Switch between dark, light, or match your system",
     "themeDark": "Dark",
@@ -87,10 +87,12 @@
     "resetPlayerButtons": "Restore default visibility"
   },
   "about": {
+    "upstreamAttribution": "Derived from PWA-LumenMusic, originally created by Behnood Shafiei.",
+    "developedAndMaintainedBy": "Developed and maintained by",
     "title": "About",
-    "subtitle": "The story behind the glow.",
-    "description1": "Lumen is an offline-first, open-source music player template — a soft yellow glow against a dark canvas, tuned for iPhone and desktop alike.",
-    "description2": "It ships with zero bundled music. Import your own songs and Lumen reads their title, artist, album, and cover art automatically. Everything — your library, playlists, favorites, and settings — lives only on this device.",
+    "subtitle": "PrivateKara — Bring Your Own Media Karaoke PWA",
+    "description1": "Play your own songs, music videos, instrumentals, and synchronized lyrics in physical karaoke venues, primarily on iPhone.",
+    "description2": "Bring your own media. Your library, playlists, favorites, and settings stay on this device.",
     "architectureTitle": "Architecture",
     "architectureBody": "Vanilla HTML, CSS and JavaScript. No frameworks, no build step, no backend. IndexedDB for storage, a Service Worker for offline use.",
     "source": "Source code",
@@ -229,7 +231,7 @@
   },
   "phoneMusic": {
     "title": "Phone Music",
-    "subtitle": "Music living on this device, outside your Lumen library.",
+    "subtitle": "Music living on this device, outside your PrivateKara library.",
     "chooseFolder": "Choose a folder",
     "scanHint": "Pick a folder to scan it for audio files.",
     "scanning": "Scanning…",

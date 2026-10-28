@@ -35,7 +35,7 @@ python -m http.server 8080
 
 打开 `http://localhost:8080`。手机访问和 PWA 测试请使用静态 HTTPS 站点；手机上的 `localhost` 指向手机自身。不支持通过 `file://` 直接打开 `index.html`。Service Worker 等要求安全上下文的 API 需要 HTTPS 或受信任的 localhost 来源。
 
-在 iPhone 上，用 Safari 打开 HTTPS 站点，通过**分享 → 添加到主屏幕**尝试安装后的 PWA。部分应用文案和安装名称仍显示为 **Lumen**；README 已先于应用界面更新项目名称。
+在 iPhone 上，用 Safari 打开 HTTPS 站点，通过**分享 → 添加到主屏幕**尝试安装后的 PWA。应用文案和 PWA 安装名称使用 **PrivateKara**。
 
 ## 在 KTV 中使用
 
