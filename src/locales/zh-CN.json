@@ -87,8 +87,8 @@
     "resetPlayerButtons": "恢复默认显示"
   },
   "about": {
-    "upstream": "基于 Behnood Shafiei 原创的 PWA-LumenMusic。",
-    "maintainer": "开发与维护",
+    "upstreamAttribution": "基于 Behnood Shafiei 原创的 PWA-LumenMusic。",
+    "developedAndMaintainedBy": "开发与维护",
     "title": "关于",
     "subtitle": "PrivateKara — 自备媒体卡拉 OK PWA",
     "description1": "播放用户自行准备的歌曲、MV、伴奏和同步歌词，主要面向在实体卡拉 OK 场所使用 iPhone 的场景。",

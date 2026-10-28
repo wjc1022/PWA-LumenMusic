@@ -87,8 +87,8 @@
     "resetPlayerButtons": "Restore default visibility"
   },
   "about": {
-    "upstream": "Derived from PWA-LumenMusic, originally created by Behnood Shafiei.",
-    "maintainer": "Developed and maintained by",
+    "upstreamAttribution": "Derived from PWA-LumenMusic, originally created by Behnood Shafiei.",
+    "developedAndMaintainedBy": "Developed and maintained by",
     "title": "About",
     "subtitle": "PrivateKara — Bring Your Own Media Karaoke PWA",
     "description1": "Play your own songs, music videos, instrumentals, and synchronized lyrics in physical karaoke venues, primarily on iPhone.",

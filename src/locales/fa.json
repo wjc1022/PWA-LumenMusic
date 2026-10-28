@@ -87,8 +87,8 @@
     "resetPlayerButtons": "بازگرداندن نمایش پیش‌فرض"
   },
   "about": {
-    "upstream": "برگرفته از PWA-LumenMusic، ساختهٔ اصلی Behnood Shafiei.",
-    "maintainer": "توسعه و نگهداری توسط",
+    "upstreamAttribution": "برگرفته از PWA-LumenMusic، ساختهٔ اصلی Behnood Shafiei.",
+    "developedAndMaintainedBy": "توسعه و نگهداری توسط",
     "title": "درباره",
     "subtitle": "PrivateKara — برنامهٔ وب کارائوکه با رسانه‌های خودتان",
     "description1": "آهنگ‌ها، موزیک‌ویدیوها، موسیقی بی‌کلام و متن ترانهٔ همگامِ آماده‌شده توسط خودتان را در مکان‌های کارائوکه، عمدتاً با آیفون، پخش کنید.",
