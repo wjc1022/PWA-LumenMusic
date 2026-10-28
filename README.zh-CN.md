@@ -27,9 +27,9 @@ PrivateKara 是一款优先面向手机的渐进式 Web 应用，主要用于实
 
 应用使用原生 HTML、CSS 和 JavaScript ES 模块，无 npm 依赖，也无需构建。
 
-仓库：[wjc1022/PrivateKara](https://github.com/wjc1022/PrivateKara)。这些链接指向计划中的仓库名称；所有者完成重命名前，请使用当前工作副本。状态及合并前提见[重命名检查清单](./docs/REPOSITORY_RENAME.md)。
+仓库：[wjc1022/PrivateKara](https://github.com/wjc1022/PrivateKara)。已完成的检查和待验证的部署事项见[重命名验证记录](./docs/REPOSITORY_RENAME.md)。
 
-重命名完成后，克隆并进入仓库，再使用 Python 3 启动服务：
+克隆并进入仓库，再使用 Python 3 启动服务：
 
 ```sh
 git clone https://github.com/wjc1022/PrivateKara.git

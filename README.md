@@ -27,9 +27,9 @@ Recent items and play counts exist locally, but they are basic selection records
 
 The app uses plain HTML, CSS, and JavaScript ES modules. There are no npm dependencies or build steps.
 
-Repository: [wjc1022/PrivateKara](https://github.com/wjc1022/PrivateKara). These links target the planned repository name; until the owner completes the rename, use the current checkout. See the [rename checklist](./docs/REPOSITORY_RENAME.md) for status and merge prerequisites.
+Repository: [wjc1022/PrivateKara](https://github.com/wjc1022/PrivateKara). See the [rename verification record](./docs/REPOSITORY_RENAME.md) for completed checks and remaining deployment validation.
 
-After the rename, clone and enter the repository, then start the server with Python 3:
+Clone and enter the repository, then start the server with Python 3:
 
 ```sh
 git clone https://github.com/wjc1022/PrivateKara.git
