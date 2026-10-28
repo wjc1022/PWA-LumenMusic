@@ -2,7 +2,7 @@
 
 更新日期：2026-10-27。当前工作区已统一播放器；歌词改为每首歌曲一份原始文本。
 
-本轮 v29 存储基准覆盖下文旧版本描述：lumen-db v2 是破坏性结构升级，旧资料库清空，用户需重新导入；不迁移旧数据。lyrics 仍为 `{ songId, text }`。JSON 与 .lmp 格式版本均为 3，旧格式明确拒绝；新格式完整保存主媒体、伴奏、封面、歌词、资料、收藏、计数和歌单关系。单首导入可用歌词与歌曲资源同事务提交，完整备份恢复整体原子提交。实际验证与设备限制见 KTV_PLAN.md 顶部最新章节。
+本轮 v29 存储基准覆盖下文旧版本描述：lumen-db v2 是破坏性结构升级，旧资料库清空，用户需重新导入；不迁移旧数据。lyrics 仍为 `{ songId, text }`。JSON 与 .lmp 格式版本均为 3，旧格式明确拒绝；新格式完整保存主媒体、伴奏、封面、歌词、资料、收藏、计数和歌单关系。单首导入可用歌词与歌曲资源同事务提交，完整备份恢复整体原子提交。实际验证与设备限制见 [DEVELOPMENT_HISTORY.md](history/DEVELOPMENT_HISTORY.md) 顶部最新章节。
 
 ## 解析契约
 src/lyrics/lrc.mjs 导出：
@@ -49,10 +49,10 @@ JSON 对伴奏 Blob 的序列化问题独立存在，本轮仅调整歌词结构
 解析器覆盖时间边界、反向定位、offset 顺序、重复行/逐字、空白间奏、普通文本及异常输入。
 集成覆盖暂停定位、快速切歌、异步竞争、收起后停止循环、重新展开、歌词更换及音频版本切换。
 验证任意语言及双语混排、原始 LRC 的新 .lmp / JSON 往返、重复导入覆盖、界面语言不影响歌词、刷新持久化、真实 iPhone 选取及离线模块。
-命令及整体验收见 AGENTS.md 和 KTV_PLAN.md。旧 lyrics-modal 测试随新结构更新，不以维持已删除 DOM 为目标。
+命令及整体验收见 AGENTS.md 和 [DEVELOPMENT_HISTORY.md](history/DEVELOPMENT_HISTORY.md)。旧 lyrics-modal 测试随新结构更新，不以维持已删除 DOM 为目标。
 
 ## Video lyrics (2026-10-27)
-Video records use the same songId/raw-text lyrics contract. Portrait hides the entire lyrics region without changing stored text; landscape shows a separate sidebar, hidden when lyrics are absent. Audio retains its existing display. audioEl.currentTime remains the only clock. Request container fullscreen first, otherwise use explicitly labelled page fill. Native iPhone video fullscreen does not carry custom HTML sidebars. See KTV_PLAN.md for verification limits.
+Video records use the same songId/raw-text lyrics contract. Portrait hides the entire lyrics region without changing stored text; landscape shows a separate sidebar, hidden when lyrics are absent. Audio retains its existing display. audioEl.currentTime remains the only clock. Request container fullscreen first, otherwise use explicitly labelled page fill. Native iPhone video fullscreen does not carry custom HTML sidebars. See [DEVELOPMENT_HISTORY.md](history/DEVELOPMENT_HISTORY.md) for verification limits.
 
 ## 横屏视频控制与按钮偏好（2026-10-27）
 - 横屏有字幕时按约 75:25 分配视频与字幕的净宽度；共享 `--lyrics-fraction`、间距及安全区域变量计算字幕、控件和渐变遮罩边界。RTL 界面仍将字幕放在视频右侧。
